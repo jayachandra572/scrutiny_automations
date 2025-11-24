@@ -20,6 +20,8 @@ namespace BatchProcessor
         private readonly int _maxParallelism;
         private readonly string _tempScriptFolder;
         private readonly bool _enableVerboseLogging;
+        private CsvParameterMapper _csvMapper;
+        private bool _useCsvMapping;
 
         public DrawingBatchProcessor(
             string accoreconsoleExePath,
@@ -35,6 +37,24 @@ namespace BatchProcessor
             _maxParallelism = maxParallelism;
             _tempScriptFolder = string.IsNullOrWhiteSpace(tempScriptFolder) ? Path.GetTempPath() : tempScriptFolder;
             _enableVerboseLogging = enableVerboseLogging;
+            _useCsvMapping = false;
+        }
+
+        /// <summary>
+        /// Enable CSV-based parameter mapping
+        /// </summary>
+        public bool EnableCsvMapping(string csvFilePath)
+        {
+            _csvMapper = new CsvParameterMapper(csvFilePath);
+            _useCsvMapping = _csvMapper.LoadCsv();
+            
+            if (_useCsvMapping)
+            {
+                Console.WriteLine($"\n✅ CSV Parameter Mapping Enabled");
+                Console.WriteLine(_csvMapper.GetStatistics());
+            }
+            
+            return _useCsvMapping;
         }
 
         /// <summary>
@@ -165,8 +185,26 @@ namespace BatchProcessor
             {
                 Console.WriteLine($"[{timestamp}] ⏳ Processing: {result.DrawingName}");
 
+                // Generate drawing-specific config if CSV mapping is enabled
+                string drawingConfigPath = inputJsonPath;
+                if (_useCsvMapping && _csvMapper != null)
+                {
+                    var csvConfig = _csvMapper.GenerateConfigJson(dwgPath, inputJsonPath);
+                    if (csvConfig != null)
+                    {
+                        // Create temporary config file for this drawing
+                        drawingConfigPath = Path.Combine(_tempScriptFolder, $"config_{timestamp}_{result.DrawingName}.json");
+                        File.WriteAllText(drawingConfigPath, csvConfig);
+                        Console.WriteLine($"  [{result.DrawingName}] 📋 Generated config from CSV");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"  [{result.DrawingName}] ⚠️  No CSV parameters, using default config");
+                    }
+                }
+
                 // Create temporary script file for this drawing
-                string tempScriptPath = CreateTemporaryScript(dwgPath, timestamp, inputJsonPath, outputFolder, result.DrawingName);
+                string tempScriptPath = CreateTemporaryScript(dwgPath, timestamp, drawingConfigPath, outputFolder, result.DrawingName);
 
                 if (_enableVerboseLogging)
                 {
@@ -235,7 +273,7 @@ namespace BatchProcessor
                 result.Output = outputBuilder.ToString();
                 result.Success = process.ExitCode == 0;
 
-                // Clean up temp script and parameter file
+                // Clean up temp script and parameter files
                 try { File.Delete(tempScriptPath); } catch { }
                 try 
                 { 
@@ -243,6 +281,12 @@ namespace BatchProcessor
                     File.Delete(paramFile); 
                 } 
                 catch { }
+                
+                // Clean up CSV-generated config file if it was created
+                if (_useCsvMapping && drawingConfigPath != inputJsonPath)
+                {
+                    try { File.Delete(drawingConfigPath); } catch { }
+                }
 
                 if (result.Success)
                 {

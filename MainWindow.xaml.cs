@@ -69,6 +69,22 @@ namespace BatchProcessor
             }
         }
 
+        private void BtnBrowseCsv_Click(object sender, System.Windows.RoutedEventArgs e)
+        {
+            var dialog = new WpfOpenFileDialog
+            {
+                Title = "Select CSV parameter file (optional)",
+                Filter = "CSV Files (*.csv)|*.csv|All Files (*.*)|*.*",
+                CheckFileExists = true
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                TxtCsvFile.Text = dialog.FileName;
+                LogMessage($"📊 CSV file selected: {System.IO.Path.GetFileName(dialog.FileName)}");
+            }
+        }
+
         private void BtnBrowseCommonUtils_Click(object sender, RoutedEventArgs e)
         {
             BrowseForDll(TxtCommonUtilsDll, "Select CommonUtils.dll");
@@ -168,6 +184,7 @@ namespace BatchProcessor
                 InputFolder = TxtInputFolder.Text,
                 OutputFolder = TxtOutputFolder.Text,
                 ConfigFile = TxtConfigFile.Text,
+                CsvFile = TxtCsvFile.Text,
                 CommonUtilsDll = TxtCommonUtilsDll.Text,
                 NewtonsoftDll = TxtNewtonsoftDll.Text,
                 CrxAppDll = TxtCrxAppDll.Text,
@@ -195,6 +212,7 @@ namespace BatchProcessor
                         TxtInputFolder.Text = settings.InputFolder ?? "";
                         TxtOutputFolder.Text = settings.OutputFolder ?? "";
                         TxtConfigFile.Text = settings.ConfigFile ?? "";
+                        TxtCsvFile.Text = settings.CsvFile ?? "";
                         TxtCommonUtilsDll.Text = settings.CommonUtilsDll ?? "";
                         TxtNewtonsoftDll.Text = settings.NewtonsoftDll ?? "";
                         TxtCrxAppDll.Text = settings.CrxAppDll ?? "";
@@ -329,6 +347,21 @@ namespace BatchProcessor
                     tempScriptFolder: "",
                     enableVerboseLogging: verbose
                 );
+
+                // Enable CSV parameter mapping if CSV file is provided
+                if (!string.IsNullOrWhiteSpace(TxtCsvFile.Text) && File.Exists(TxtCsvFile.Text))
+                {
+                    LogMessage($"\n📊 Enabling CSV parameter mapping...");
+                    bool csvEnabled = processor.EnableCsvMapping(TxtCsvFile.Text);
+                    if (csvEnabled)
+                    {
+                        LogMessage($"✅ CSV mapping enabled - each drawing will use its specific parameters");
+                    }
+                    else
+                    {
+                        LogMessage($"⚠️  CSV mapping failed - will use default config for all drawings");
+                    }
+                }
 
                 // Redirect console output to our log
                 var originalOut = Console.Out;
@@ -480,6 +513,7 @@ namespace BatchProcessor
         public string? InputFolder { get; set; }
         public string? OutputFolder { get; set; }
         public string? ConfigFile { get; set; }
+        public string? CsvFile { get; set; }
         public string? CommonUtilsDll { get; set; }
         public string? NewtonsoftDll { get; set; }
         public string? CrxAppDll { get; set; }

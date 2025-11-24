@@ -37,6 +37,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120"/>
@@ -58,6 +59,11 @@
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="Config JSON:" VerticalAlignment="Center" Margin="0,5,0,5"/>
                 <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtConfigFile" Margin="5" Padding="5" VerticalAlignment="Center"/>
                 <Button Grid.Row="2" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseConfig_Click"/>
+
+                <!-- CSV Parameter File (Optional) -->
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="CSV Parameters:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="Optional: CSV file with drawing-specific parameters"/>
+                <TextBox Grid.Row="3" Grid.Column="1" x:Name="TxtCsvFile" Margin="5" Padding="5" VerticalAlignment="Center" Background="#F0F8FF"/>
+                <Button Grid.Row="3" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseCsv_Click"/>
             </Grid>
         </GroupBox>
 
