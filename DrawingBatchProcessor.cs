@@ -187,24 +187,62 @@ namespace BatchProcessor
 
                 // Generate drawing-specific config if CSV mapping is enabled
                 string drawingConfigPath = inputJsonPath;
+                string drawingConfigJson = null; // JSON content (if we want to pass directly)
+                
                 if (_useCsvMapping && _csvMapper != null)
                 {
-                    var csvConfig = _csvMapper.GenerateConfigJson(dwgPath, inputJsonPath);
+                    // Use template config if provided, otherwise null for CSV-only mode
+                    string templatePath = !string.IsNullOrWhiteSpace(inputJsonPath) && File.Exists(inputJsonPath) ? inputJsonPath : null;
+                    
+                    var csvConfig = _csvMapper.GenerateConfigJson(dwgPath, templatePath);
                     if (csvConfig != null)
                     {
-                        // Create temporary config file for this drawing
-                        drawingConfigPath = Path.Combine(_tempScriptFolder, $"config_{timestamp}_{result.DrawingName}.json");
-                        File.WriteAllText(drawingConfigPath, csvConfig);
-                        Console.WriteLine($"  [{result.DrawingName}] 📋 Generated config from CSV");
+                        // Store JSON content directly (no temp file needed)
+                        drawingConfigJson = csvConfig;
+                        drawingConfigPath = ""; // No file path - we'll pass JSON directly
+                        
+                        if (templatePath == null)
+                        {
+                            Console.WriteLine($"  [{result.DrawingName}] 📋 Generated config from CSV (no template)");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"  [{result.DrawingName}] 📋 Generated config from CSV + template");
+                        }
                     }
                     else
                     {
-                        Console.WriteLine($"  [{result.DrawingName}] ⚠️  No CSV parameters, using default config");
+                        Console.WriteLine($"  [{result.DrawingName}] ⚠️  No CSV parameters found");
+                        if (string.IsNullOrWhiteSpace(drawingConfigPath) || !File.Exists(drawingConfigPath))
+                        {
+                            Console.WriteLine($"  [{result.DrawingName}] ❌ ERROR: No config available for this drawing");
+                            result.Success = false;
+                            result.ErrorMessage = "No configuration available (not in CSV and no base config)";
+                            return result;
+                        }
                     }
+                }
+                else
+                {
+                    // Not using CSV - read JSON from file if provided
+                    if (!string.IsNullOrWhiteSpace(drawingConfigPath) && File.Exists(drawingConfigPath))
+                    {
+                        drawingConfigJson = File.ReadAllText(drawingConfigPath);
+                    }
+                }
+                
+                // Validate that we have config content before proceeding
+                if (string.IsNullOrWhiteSpace(drawingConfigJson))
+                {
+                    Console.WriteLine($"  [{result.DrawingName}] ❌ ERROR: No config content available");
+                    result.Success = false;
+                    result.ErrorMessage = "No configuration content available";
+                    return result;
                 }
 
                 // Create temporary script file for this drawing
-                string tempScriptPath = CreateTemporaryScript(dwgPath, timestamp, drawingConfigPath, outputFolder, result.DrawingName);
+                // Pass drawingConfigPath (may be empty if using JSON content directly)
+                string tempScriptPath = CreateTemporaryScript(dwgPath, timestamp, drawingConfigPath ?? "", outputFolder, result.DrawingName);
 
                 if (_enableVerboseLogging)
                 {
@@ -228,16 +266,19 @@ namespace BatchProcessor
                 string outputFileName = $"{result.DrawingName}.json";
                 
                 // Set environment variables for this specific process
-                process.StartInfo.EnvironmentVariables["INPUT_JSON_PATH"] = inputJsonPath;
+                // Pass JSON content directly via environment variable (no temp file needed!)
+                process.StartInfo.EnvironmentVariables["INPUT_JSON_PATH"] = ""; // Empty = use content
+                process.StartInfo.EnvironmentVariables["INPUT_JSON_CONTENT"] = drawingConfigJson;
                 process.StartInfo.EnvironmentVariables["OUTPUT_FOLDER"] = outputFolder;
                 process.StartInfo.EnvironmentVariables["OUTPUT_FILENAME"] = outputFileName;
                 process.StartInfo.EnvironmentVariables["TIMESTAMP"] = timestamp;
                 process.StartInfo.EnvironmentVariables["DRAWING_NAME"] = result.DrawingName;
 
                 // Always log environment variables for debugging
+                Console.WriteLine($"  [{result.DrawingName}] ✅ Passing config JSON directly (no temp file)");
                 Console.WriteLine($"  [{result.DrawingName}] ENV: OUTPUT_FOLDER = {outputFolder}");
                 Console.WriteLine($"  [{result.DrawingName}] ENV: OUTPUT_FILENAME = {outputFileName}");
-                Console.WriteLine($"  [{result.DrawingName}] ENV: INPUT_JSON_PATH = {inputJsonPath}");
+                Console.WriteLine($"  [{result.DrawingName}] ENV: INPUT_JSON_CONTENT = {drawingConfigJson.Length} chars");
                 Console.WriteLine($"  [{result.DrawingName}] ENV: DRAWING_NAME = {result.DrawingName}");
 
                 // Capture output

@@ -22,10 +22,9 @@ namespace BatchProcessor.Configuration
         public List<string> DllsToLoad { get; set; } = new List<string>();
 
         /// <summary>
-        /// List of available AutoCAD commands to choose from at runtime
-        /// Example: ["ProcessWithJsonBatch", "ExtractScrutinyMetricsBatch"]
-        /// User can select which command to run when starting BatchProcessor
-        /// If empty, MainCommand will be used as the only option
+        /// AutoCAD command to execute on each drawing (legacy, kept for backward compatibility)
+        /// If Commands list is empty, this single command will be used
+        /// Default: ProcessWithJsonBatch
         /// </summary>
         public List<string> AvailableCommands { get; set; } = new List<string>();
 

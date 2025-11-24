@@ -15,15 +15,17 @@ namespace BatchProcessor
         public ParametersMapper()
         {
             // Define mapping from CSV column names to Parameters property names
+            // Based on user specification
             _csvToPropertyMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                // Direct mappings (same name)
+                // Direct mappings (same name in CSV and Parameters)
                 { "ProjectType", "ProjectType" },
                 { "NatureOfDevelopment", "NatureOfDevelopment" },
                 { "PlotUse", "PlotUse" },
                 { "PlotSubUse", "PlotSubUse" },
                 { "SpecialBuildingType", "SpecialBuildingType" },
                 { "AvailTDR", "AvailTDR" },
+                { "EffectedByRoadWidening", "EffectedbyRoadWidening" },
                 { "AvailRoadWideningConcession", "AvailRoadWideningConcession" },
                 { "RoadWideningConcessionFor", "RoadWideningConcessionFor" },
                 { "EffectedByNalaWidening", "EffectedByNalaWidening" },
@@ -32,11 +34,13 @@ namespace BatchProcessor
                 { "Authority", "Authority" },
                 { "CategoryOfLayoutPermission", "CategoryOfLayoutPermission" },
                 
-                // Mappings with different names in CSV
-                { "EffectedByRoadWidening", "EffectedbyRoadWidening" }, // Note: typo in property name
+                // Mappings with different names in CSV vs Parameters
                 { "DoYouWantToAvailExtraMortgageForNalaConversion", "AvailExtraMortgageForNalaConversion" },
                 { "DoYouWantToAvailExtraMortgageForCityLevelImpactFee", "AvailExtraMortgageForCityLevelImpactFee" },
                 { "DoYouWantToAvailExtraMortgageForCapitalizationCharges", "AvailExtraMortgageForCapitalizationCharges" },
+                
+                // Note: ExtractBlockNames, ExtractLayerNames, and layersToValidate are NOT in CSV
+                // They are set to default values (false for bools, empty list for lists)
             };
         }
 
@@ -57,12 +61,14 @@ namespace BatchProcessor
             }
 
             // Set default values for properties not in CSV
+            // ExtractBlockNames and ExtractLayerNames are not in CSV - set to false
             if (!parameters.ContainsKey("ExtractBlockNames"))
-                parameters["ExtractBlockNames"] = true;
+                parameters["ExtractBlockNames"] = false;
             
             if (!parameters.ContainsKey("ExtractLayerNames"))
-                parameters["ExtractLayerNames"] = true;
+                parameters["ExtractLayerNames"] = false;
             
+            // layersToValidate is not in CSV - set to empty list
             if (!parameters.ContainsKey("layersToValidate"))
                 parameters["layersToValidate"] = new List<string>();
             
@@ -183,8 +189,7 @@ namespace BatchProcessor
         {
             var boolProperties = new[]
             {
-                "ExtractBlockNames",
-                "ExtractLayerNames",
+                // ExtractBlockNames and ExtractLayerNames are NOT in CSV - set to false by default
                 "AvailTDR",
                 "EffectedbyRoadWidening",
                 "AvailRoadWideningConcession",

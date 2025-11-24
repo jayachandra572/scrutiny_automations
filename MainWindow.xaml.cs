@@ -54,21 +54,6 @@ namespace BatchProcessor
             }
         }
 
-        private void BtnBrowseConfig_Click(object sender, System.Windows.RoutedEventArgs e)
-        {
-            var dialog = new WpfOpenFileDialog
-            {
-                Title = "Select configuration JSON file",
-                Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
-                CheckFileExists = true
-            };
-
-            if (dialog.ShowDialog() == true)
-            {
-                TxtConfigFile.Text = dialog.FileName;
-            }
-        }
-
         private void BtnBrowseCsv_Click(object sender, System.Windows.RoutedEventArgs e)
         {
             var dialog = new WpfOpenFileDialog
@@ -183,7 +168,6 @@ namespace BatchProcessor
             {
                 InputFolder = TxtInputFolder.Text,
                 OutputFolder = TxtOutputFolder.Text,
-                ConfigFile = TxtConfigFile.Text,
                 CsvFile = TxtCsvFile.Text,
                 CommonUtilsDll = TxtCommonUtilsDll.Text,
                 NewtonsoftDll = TxtNewtonsoftDll.Text,
@@ -211,7 +195,6 @@ namespace BatchProcessor
                     {
                         TxtInputFolder.Text = settings.InputFolder ?? "";
                         TxtOutputFolder.Text = settings.OutputFolder ?? "";
-                        TxtConfigFile.Text = settings.ConfigFile ?? "";
                         TxtCsvFile.Text = settings.CsvFile ?? "";
                         TxtCommonUtilsDll.Text = settings.CommonUtilsDll ?? "";
                         TxtNewtonsoftDll.Text = settings.NewtonsoftDll ?? "";
@@ -319,7 +302,8 @@ namespace BatchProcessor
                 // Get settings
                 string inputFolder = TxtInputFolder.Text;
                 string outputFolder = TxtOutputFolder.Text;
-                string configFile = TxtConfigFile.Text;
+                string csvFile = TxtCsvFile.Text;
+                string configFile = ""; // No config file - CSV provides all parameters
                 string command = (CmbCommand.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "ProcessWithJsonBatch";
                 int maxParallel = int.Parse(TxtMaxParallel.Text);
                 bool verbose = ChkVerbose.IsChecked ?? false;
@@ -335,7 +319,8 @@ namespace BatchProcessor
                 LogMessage($"Starting batch processing with {command}");
                 LogMessage($"Input:  {inputFolder}");
                 LogMessage($"Output: {outputFolder}");
-                LogMessage($"Config: {configFile}");
+                LogMessage($"CSV:    {csvFile}");
+                LogMessage($"Mode:   CSV-based parameter mapping");
                 LogMessage("═══════════════════════════════════════════════════════════════\n");
 
                 // Create processor
@@ -411,15 +396,16 @@ namespace BatchProcessor
                 return false;
             }
 
-            // Validate config file
-            if (string.IsNullOrWhiteSpace(TxtConfigFile.Text))
+            // Validate CSV file
+            if (string.IsNullOrWhiteSpace(TxtCsvFile.Text))
             {
-                WpfMessageBox.Show("Please select a configuration JSON file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                WpfMessageBox.Show("Please select a CSV parameter file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                 return false;
             }
-            if (!File.Exists(TxtConfigFile.Text))
+            
+            if (!File.Exists(TxtCsvFile.Text))
             {
-                WpfMessageBox.Show("Configuration file does not exist", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                WpfMessageBox.Show("CSV file does not exist", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                 return false;
             }
 
@@ -512,7 +498,6 @@ namespace BatchProcessor
     {
         public string? InputFolder { get; set; }
         public string? OutputFolder { get; set; }
-        public string? ConfigFile { get; set; }
         public string? CsvFile { get; set; }
         public string? CommonUtilsDll { get; set; }
         public string? NewtonsoftDll { get; set; }

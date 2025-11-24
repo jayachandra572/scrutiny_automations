@@ -63,19 +63,60 @@ Drawing2.dwg,BUILDING_PERMISSION,COMMERCIAL,OFFICE,GHMC,FALSE,FALSE,[]
 Drawing3.dwg,LAYOUT_WITH_OPEN_PLOTS,,,DTCP,FALSE,FALSE,[]
 ```
 
+## 🎨 Three Modes of Operation
+
+### Mode 1: CSV Only (No Base Config)
+**Use when:** CSV has ALL parameters needed for processing
+
+```
+✅ CSV File: parameters.csv
+❌ Config JSON: (leave empty)
+```
+
+All parameters come from CSV. Perfect for completely different drawing types!
+
+### Mode 2: Config Only (No CSV)
+**Use when:** All drawings use the same parameters
+
+```
+❌ CSV File: (leave empty)
+✅ Config JSON: config.json
+```
+
+Traditional batch processing - all drawings get same config.
+
+### Mode 3: CSV + Config (Recommended)
+**Use when:** You have common settings + per-drawing variations
+
+```
+✅ CSV File: parameters.csv
+✅ Config JSON: base_config.json
+```
+
+CSV parameters are **merged** with base config:
+- Base config provides defaults and common settings
+- CSV overrides specific parameters per drawing
+- Best of both worlds!
+
 ## 🚀 How to Use
 
 ### Method 1: Using the UI
 
 1. **Open BatchProcessor**
 2. **Fill in the basic fields**:
-   - Input Folder (containing .dwg files)
-   - Output Folder (for JSON results)
-   - Config JSON (base/template configuration)
-3. **Browse for CSV file** (optional):
+   - Input Folder (containing .dwg files) - **Required**
+   - Output Folder (for JSON results) - **Required**
+   - Config JSON (base/template configuration) - **Optional*** 
+   - CSV Parameters - **Optional***
+3. **Browse for CSV file**:
    - Click "Browse..." next to "CSV Parameters"
    - Select your CSV file
 4. **Click "Run Batch Processing"**
+
+***Note:** You must provide **either** a Config JSON **or** a CSV file (or both!):
+- **CSV only**: All parameters come from CSV
+- **Config only**: All drawings use same config
+- **CSV + Config**: CSV parameters merged with base config template
 
 ### Method 2: Programmatic Usage
 
