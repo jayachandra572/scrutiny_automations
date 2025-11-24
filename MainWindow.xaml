@@ -18,8 +18,9 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
@@ -127,8 +128,7 @@
                 <!-- Command Selection -->
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Command:" VerticalAlignment="Center" Margin="0,5,0,5"/>
                 <ComboBox Grid.Row="0" Grid.Column="1" x:Name="CmbCommand" Margin="5" Padding="5" VerticalAlignment="Center">
-                    <ComboBoxItem Content="RunPreScrutinyValidationsBatch" IsSelected="True"/>
-                    <ComboBoxItem Content="ExtractScrutinyMetricsBatch"/>
+                    <!-- Commands will be loaded dynamically from appsettings.json -->
                 </ComboBox>
 
                 <!-- Max Parallel Processes -->

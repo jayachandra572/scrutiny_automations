@@ -176,15 +176,26 @@ namespace BatchProcessor
                 return;
             }
 
+            Console.WriteLine($"\n📦 Verifying {_dllsToLoad.Count} DLL(s):");
             bool allValid = true;
-            foreach (var dll in _dllsToLoad)
+            
+            for (int i = 0; i < _dllsToLoad.Count; i++)
             {
-                if (!File.Exists(dll))
+                string dllPath = _dllsToLoad[i];
+                string dllName = Path.GetFileName(dllPath);
+                
+                if (!File.Exists(dllPath))
                 {
-                    Console.WriteLine($"❌ Error: DLL not found: {dll}");
+                    Console.WriteLine($"    ❌ {i + 1}. {dllName} - FILE NOT FOUND: {dllPath}");
                     allValid = false;
                 }
+                else
+                {
+                    Console.WriteLine($"    ✅ {i + 1}. {dllName}");
+                }
             }
+            
+            Console.WriteLine(); // Empty line after DLL list
 
             if (!allValid)
             {
@@ -211,7 +222,12 @@ namespace BatchProcessor
 
             try
             {
-                Console.WriteLine($"[{timestamp}] ⏳ Processing: {result.DrawingName}");
+                // Add clear separator before each drawing's logs
+                Console.WriteLine($"\n");
+                Console.WriteLine($"{new string('═', 80)}");
+                Console.WriteLine($"  📄 Processing: {result.DrawingName}");
+                Console.WriteLine($"{new string('═', 80)}");
+                Console.WriteLine();
 
                 // Generate drawing-specific config if CSV mapping is enabled
                 string drawingConfigPath = inputJsonPath;
@@ -223,7 +239,7 @@ namespace BatchProcessor
                     string templatePath = !string.IsNullOrWhiteSpace(inputJsonPath) && File.Exists(inputJsonPath) ? inputJsonPath : null;
                     
                     var csvConfig = _csvMapper.GenerateConfigJson(dwgPath, templatePath);
-                    if (csvConfig != null)
+                        if (csvConfig != null)
                     {
                         // Store JSON content directly (no temp file needed)
                         drawingConfigJson = csvConfig;
@@ -231,19 +247,19 @@ namespace BatchProcessor
                         
                         if (templatePath == null)
                         {
-                            Console.WriteLine($"  [{result.DrawingName}] 📋 Generated config from CSV (no template)");
+                            Console.WriteLine($"  📋 Generated config from CSV (no template)");
                         }
                         else
                         {
-                            Console.WriteLine($"  [{result.DrawingName}] 📋 Generated config from CSV + template");
+                            Console.WriteLine($"  📋 Generated config from CSV + template");
                         }
                     }
                     else
                     {
-                        Console.WriteLine($"  [{result.DrawingName}] ⚠️  No CSV parameters found");
+                        Console.WriteLine($"  ⚠️  No CSV parameters found");
                         if (string.IsNullOrWhiteSpace(drawingConfigPath) || !File.Exists(drawingConfigPath))
                         {
-                            Console.WriteLine($"  [{result.DrawingName}] ❌ ERROR: No config available for this drawing");
+                            Console.WriteLine($"  ❌ ERROR: No config available for this drawing");
                             result.Success = false;
                             result.WasProcessed = false; // Not processed - error before AutoCAD
                             result.ErrorMessage = "No configuration available (not in CSV and no base config)";
@@ -263,7 +279,7 @@ namespace BatchProcessor
                 // Validate that we have config content before proceeding
                 if (string.IsNullOrWhiteSpace(drawingConfigJson))
                 {
-                    Console.WriteLine($"  [{result.DrawingName}] ❌ ERROR: No config content available");
+                    Console.WriteLine($"  ❌ ERROR: No config content available");
                     result.Success = false;
                     result.WasProcessed = false; // Not processed - error before AutoCAD
                     result.ErrorMessage = "No configuration content available";
@@ -276,7 +292,7 @@ namespace BatchProcessor
 
                 if (_enableVerboseLogging)
                 {
-                    Console.WriteLine($"  [{result.DrawingName}] Script: {tempScriptPath}");
+                    Console.WriteLine($"  Script: {tempScriptPath}");
                 }
 
                 var process = new Process
@@ -305,21 +321,77 @@ namespace BatchProcessor
                 process.StartInfo.EnvironmentVariables["DRAWING_NAME"] = result.DrawingName;
 
                 // Always log environment variables for debugging
-                Console.WriteLine($"  [{result.DrawingName}] ✅ Passing config JSON directly (no temp file)");
-                Console.WriteLine($"  [{result.DrawingName}] ENV: OUTPUT_FOLDER = {outputFolder}");
-                Console.WriteLine($"  [{result.DrawingName}] ENV: OUTPUT_FILENAME = {outputFileName}");
-                Console.WriteLine($"  [{result.DrawingName}] ENV: INPUT_JSON_CONTENT = {drawingConfigJson.Length} chars");
-                Console.WriteLine($"  [{result.DrawingName}] ENV: DRAWING_NAME = {result.DrawingName}");
+                Console.WriteLine($"  ✅ Passing config JSON directly (no temp file)");
+                Console.WriteLine($"  📦 Environment Variables:");
+                Console.WriteLine($"     OUTPUT_FOLDER = {outputFolder}");
+                Console.WriteLine($"     OUTPUT_FILENAME = {outputFileName}");
+                Console.WriteLine($"     INPUT_JSON_CONTENT = {drawingConfigJson.Length} chars");
+                Console.WriteLine($"     DRAWING_NAME = {result.DrawingName}");
+                Console.WriteLine();
 
                 // Capture output
                 var outputBuilder = new StringBuilder();
+                var dllLoadErrors = new List<string>();
+                
                 process.OutputDataReceived += (sender, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
                         outputBuilder.AppendLine(e.Data);
-                        // Always show output - this is critical for debugging
-                        Console.WriteLine($"  [{result.DrawingName}] {e.Data}");
+                        
+                        string data = e.Data.Trim();
+                        
+                        // Check for NETLOAD errors and success messages
+                        if (data.Contains("NETLOAD", StringComparison.OrdinalIgnoreCase) || 
+                            data.Contains("netload", StringComparison.OrdinalIgnoreCase) ||
+                            data.Contains("Assembly", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Check for error indicators
+                            if (data.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+                                data.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                                data.Contains("cannot", StringComparison.OrdinalIgnoreCase) ||
+                                data.Contains("unable", StringComparison.OrdinalIgnoreCase) ||
+                                data.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
+                                data.Contains("exception", StringComparison.OrdinalIgnoreCase) ||
+                                data.Contains("could not", StringComparison.OrdinalIgnoreCase))
+                            {
+                                dllLoadErrors.Add(data);
+                                Console.WriteLine($"  ❌ DLL Load Error: {data}");
+                            }
+                            else if (data.Contains("successfully", StringComparison.OrdinalIgnoreCase) ||
+                                     data.Contains("loaded", StringComparison.OrdinalIgnoreCase) ||
+                                     data.Contains("Assembly", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Extract DLL name if possible
+                                Console.WriteLine($"  ✅ DLL Loaded: {data}");
+                            }
+                        }
+                        
+                        // Filter out verbose AutoCAD noise
+                        bool isVerboseNoise = data == "Command:" || 
+                                             data == "Regenerating model." ||
+                                             data.StartsWith("Substituting [") ||
+                                             data == "Loading Modeler DLLs." ||
+                                             data == "AutoCAD menu utilities loaded." ||
+                                             data.Contains("System Variable Changed") ||
+                                             data.Contains("monitored system variables") ||
+                                             data == "CoreHeartBeat" ||
+                                             data.StartsWith("AcCoreConsole:") ||
+                                             data.StartsWith("AutoCAD Core Engine Console") ||
+                                             data.StartsWith("Version Number:") ||
+                                             data.StartsWith("LogFilePath has been set") ||
+                                             data.StartsWith("Execution Path:") ||
+                                             data.StartsWith("Current Directory:") ||
+                                             data.StartsWith("Redirect stdout") ||
+                                             string.IsNullOrWhiteSpace(data);
+                        
+                        // Only show important output or errors (but skip if already shown above)
+                        if (!isVerboseNoise && !data.Contains("NETLOAD", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Show all non-noise output without prefix (separator already shows which drawing)
+                            Console.WriteLine($"  {e.Data}");
+                        }
+                        // Skip verbose noise entirely
                     }
                 };
 
@@ -328,7 +400,8 @@ namespace BatchProcessor
                     if (!string.IsNullOrEmpty(e.Data))
                     {
                         outputBuilder.AppendLine($"ERROR: {e.Data}");
-                        Console.WriteLine($"  [{result.DrawingName}] ❌ ERROR: {e.Data}");
+                        // Always show errors (separator already shows which drawing)
+                        Console.WriteLine($"  ❌ ERROR: {e.Data}");
                     }
                 };
 
@@ -342,6 +415,13 @@ namespace BatchProcessor
                 result.Duration = result.EndTime - result.StartTime;
                 result.ExitCode = process.ExitCode;
                 result.Output = outputBuilder.ToString();
+                
+                // Check for DLL loading errors
+                if (dllLoadErrors.Count > 0)
+                {
+                    Console.WriteLine($"  ⚠️  WARNING: {dllLoadErrors.Count} DLL loading error(s) detected!");
+                    result.ErrorMessage = $"DLL loading errors: {string.Join("; ", dllLoadErrors)}";
+                }
                 
                 // Mark as processed (AutoCAD process was started)
                 result.WasProcessed = true;
@@ -371,22 +451,29 @@ namespace BatchProcessor
                     try { File.Delete(drawingConfigPath); } catch { }
                 }
 
+                // Add completion status with clear formatting
+                Console.WriteLine();
+                Console.WriteLine($"{new string('─', 80)}");
                 if (result.Success)
                 {
                     // Success: No JSON file created (all validations passed)
-                    Console.WriteLine($"[{timestamp}] ✅ Completed: {result.DrawingName} ({result.Duration.TotalSeconds:F1}s) - All validations passed");
+                    Console.WriteLine($"  ✅ SUCCESS: {result.DrawingName}");
+                    Console.WriteLine($"     Duration: {result.Duration.TotalSeconds:F1}s | All validations passed");
                 }
                 else
                 {
                     // Failed: JSON file exists (validations failed)
-                    Console.WriteLine($"[{timestamp}] ❌ Failed: {result.DrawingName} ({result.Duration.TotalSeconds:F1}s) - Failures detected (JSON created)");
+                    Console.WriteLine($"  ❌ FAILED: {result.DrawingName}");
+                    Console.WriteLine($"     Duration: {result.Duration.TotalSeconds:F1}s | Failures detected (JSON created)");
                     
                     // Log exit code for debugging if non-zero
                     if (process.ExitCode != 0)
                     {
-                        Console.WriteLine($"[{timestamp}] ⚠️  Note: Process exit code was {process.ExitCode}");
+                        Console.WriteLine($"     Exit Code: {process.ExitCode}");
                     }
                 }
+                Console.WriteLine($"{new string('═', 80)}");
+                Console.WriteLine();
             }
             catch (Exception ex)
             {
@@ -395,7 +482,12 @@ namespace BatchProcessor
                 result.ErrorMessage = ex.Message;
                 result.EndTime = DateTime.Now;
                 result.Duration = result.EndTime - result.StartTime;
-                Console.WriteLine($"❌ Exception processing {result.DrawingName}: {ex.Message}");
+                Console.WriteLine();
+                Console.WriteLine($"{new string('─', 80)}");
+                Console.WriteLine($"  ❌ EXCEPTION: {result.DrawingName}");
+                Console.WriteLine($"     Error: {ex.Message}");
+                Console.WriteLine($"{new string('═', 80)}");
+                Console.WriteLine();
             }
 
             return result;
@@ -435,7 +527,7 @@ namespace BatchProcessor
 
             var scriptBuilder = new StringBuilder();
 
-            // Load all DLLs in order
+            // Load all DLLs in order (verification already done at start)
             foreach (var dllPath in _dllsToLoad)
             {
                 scriptBuilder.AppendLine($"NETLOAD \"{dllPath}\"");
@@ -456,12 +548,19 @@ namespace BatchProcessor
 
             string scriptContent = scriptBuilder.ToString();
             
-            Console.WriteLine($"  [{drawingName}] 📝 Parameter file: {paramFilePath}");
-            
+            // Only log parameter file in verbose mode
             if (_enableVerboseLogging)
             {
-                Console.WriteLine($"\nGenerated Script:\n{scriptContent}\n");
-                Console.WriteLine($"Parameter JSON:\n{paramsJson}\n");
+                Console.WriteLine($"  📝 Parameter file: {paramFilePath}");
+                Console.WriteLine($"  📝 Generated Script: {tempScriptPath}");
+                Console.WriteLine($"  📋 Parameter JSON:");
+                // Format JSON with indentation for readability
+                var lines = paramsJson.Split('\n');
+                foreach (var line in lines)
+                {
+                    Console.WriteLine($"     {line}");
+                }
+                Console.WriteLine();
             }
 
             File.WriteAllText(tempScriptPath, scriptContent);

@@ -21,7 +21,67 @@ namespace BatchProcessor
         public MainWindow()
         {
             InitializeComponent();
+            LoadCommandsFromAppSettings();
             LoadUserSettings();
+        }
+        
+        private void LoadCommandsFromAppSettings()
+        {
+            try
+            {
+                var appSettings = LoadAppSettings();
+                if (appSettings != null && appSettings.AvailableCommands != null && appSettings.AvailableCommands.Count > 0)
+                {
+                    // Clear existing items
+                    CmbCommand.Items.Clear();
+                    
+                    // Add commands from appsettings.json
+                    foreach (var cmd in appSettings.AvailableCommands)
+                    {
+                        var item = new ComboBoxItem { Content = cmd };
+                        CmbCommand.Items.Add(item);
+                    }
+                    
+                    // Select the main command or first one
+                    if (CmbCommand.Items.Count > 0)
+                    {
+                        bool found = false;
+                        if (!string.IsNullOrEmpty(appSettings.MainCommand))
+                        {
+                            foreach (ComboBoxItem item in CmbCommand.Items)
+                            {
+                                if (item.Content.ToString() == appSettings.MainCommand)
+                                {
+                                    item.IsSelected = true;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // If main command not found, select first item
+                        if (!found)
+                        {
+                            CmbCommand.SelectedIndex = 0;
+                        }
+                    }
+                }
+                else
+                {
+                    // Fallback: add default commands if appsettings.json is missing or empty
+                    CmbCommand.Items.Clear();
+                    CmbCommand.Items.Add(new ComboBoxItem { Content = "RunPreScrutinyValidationsBatch", IsSelected = true });
+                    CmbCommand.Items.Add(new ComboBoxItem { Content = "ExtractScrutinyMetricsBatch" });
+                }
+            }
+            catch (Exception ex)
+            {
+                // Fallback: add default commands on error
+                CmbCommand.Items.Clear();
+                CmbCommand.Items.Add(new ComboBoxItem { Content = "RunPreScrutinyValidationsBatch", IsSelected = true });
+                CmbCommand.Items.Add(new ComboBoxItem { Content = "ExtractScrutinyMetricsBatch" });
+                LogMessage($"Could not load commands from appsettings.json: {ex.Message}");
+            }
         }
 
         #region Browse Buttons
@@ -226,6 +286,7 @@ namespace BatchProcessor
             {
                 LogMessage($"Could not load previous settings: {ex.Message}");
                 LoadDefaultsFromAppSettings();
+                LoadCommandsFromAppSettings();
             }
         }
 
@@ -308,12 +369,10 @@ namespace BatchProcessor
                 int maxParallel = int.Parse(TxtMaxParallel.Text);
                 bool verbose = ChkVerbose.IsChecked ?? false;
 
-                var dllsToLoad = new List<string>
-                {
-                    TxtCommonUtilsDll.Text,
-                    TxtNewtonsoftDll.Text,
-                    TxtCrxAppDll.Text
-                };
+                var dllsToLoad = new List<string>();
+                dllsToLoad.Add(TxtCommonUtilsDll.Text);
+                dllsToLoad.Add(TxtNewtonsoftDll.Text);
+                dllsToLoad.Add(TxtCrxAppDll.Text);
 
                 LogMessage("═══════════════════════════════════════════════════════════════");
                 LogMessage($"Starting batch processing with {command}");
@@ -350,32 +409,39 @@ namespace BatchProcessor
 
                 // Redirect console output to our log
                 var originalOut = Console.Out;
-                Console.SetOut(new TextBoxWriter(this));
+                var textBoxWriter = new TextBoxWriter(this);
+                Console.SetOut(textBoxWriter);
 
-                // Run processing
-                var summary = await processor.ProcessFolderAsync(inputFolder, outputFolder, configFile);
-
-                // Restore console output
-                Console.SetOut(originalOut);
-
-                // Display failed files and non-processed files
-                DisplayFailedFiles(summary.FailedFiles);
-                DisplayNonProcessedFiles(summary.NonProcessedFiles, summary.NonProcessedFilesWithErrors);
-
-                int totalIssues = summary.FailedFiles.Count + summary.NonProcessedFiles.Count;
-                if (totalIssues == 0)
+                try
                 {
-                    TxtStatus.Text = "Processing complete! All files processed successfully.";
-                    LogMessage("\n✅ All processing complete!");
-                    WpfMessageBox.Show("Batch processing completed successfully!", "Success", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
+                    // Run processing
+                    var summary = await processor.ProcessFolderAsync(inputFolder, outputFolder, configFile);
+
+                    // Display failed files and non-processed files
+                    DisplayFailedFiles(summary.FailedFiles);
+                    DisplayNonProcessedFiles(summary.NonProcessedFiles, summary.NonProcessedFilesWithErrors);
+
+                    int totalIssues = summary.FailedFiles.Count + summary.NonProcessedFiles.Count;
+                    if (totalIssues == 0)
+                    {
+                        TxtStatus.Text = "Processing complete! All files processed successfully.";
+                        LogMessage("\n✅ All processing complete!");
+                        WpfMessageBox.Show("Batch processing completed successfully!", "Success", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        TxtStatus.Text = $"Processing complete! {summary.FailedFiles.Count} validation failure(s), {summary.NonProcessedFiles.Count} non-processed file(s).";
+                        LogMessage($"\n⚠️ Processing complete with {summary.FailedFiles.Count} validation failure(s) and {summary.NonProcessedFiles.Count} non-processed file(s).");
+                        WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} validation failure(s) (JSON created)\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.", 
+                            "Completed with Issues", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    }
                 }
-                else
+                finally
                 {
-                    TxtStatus.Text = $"Processing complete! {summary.FailedFiles.Count} validation failure(s), {summary.NonProcessedFiles.Count} non-processed file(s).";
-                    LogMessage($"\n⚠️ Processing complete with {summary.FailedFiles.Count} validation failure(s) and {summary.NonProcessedFiles.Count} non-processed file(s).");
-                    WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} validation failure(s) (JSON created)\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.", 
-                        "Completed with Issues", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    // Always restore console output
+                    Console.SetOut(originalOut);
                 }
+
             }
             catch (Exception ex)
             {
@@ -580,14 +646,25 @@ namespace BatchProcessor
 
         public void LogMessage(string message)
         {
+            if (TxtLog == null) return;
+
             if (!Dispatcher.CheckAccess())
             {
                 Dispatcher.Invoke(() => LogMessage(message));
                 return;
             }
 
-            TxtLog.AppendText(message + Environment.NewLine);
-            TxtLog.ScrollToEnd();
+            try
+            {
+                TxtLog.AppendText(message + Environment.NewLine);
+                TxtLog.ScrollToEnd();
+                TxtLog.UpdateLayout();
+            }
+            catch (Exception ex)
+            {
+                // Fallback: try to write to console if TextBox fails
+                System.Diagnostics.Debug.WriteLine($"LogMessage error: {ex.Message}");
+            }
         }
 
         // Custom TextWriter to redirect Console.WriteLine to our TextBox
@@ -604,12 +681,24 @@ namespace BatchProcessor
             {
                 if (value != null)
                     _window.LogMessage(value);
+                else
+                    _window.LogMessage("");
+            }
+
+            public override void WriteLine()
+            {
+                _window.LogMessage("");
             }
 
             public override void Write(string? value)
             {
                 if (value != null)
                     _window.LogMessage(value);
+            }
+
+            public override void Write(char value)
+            {
+                _window.LogMessage(value.ToString());
             }
 
             public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
