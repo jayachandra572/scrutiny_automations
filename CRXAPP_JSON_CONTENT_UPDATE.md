@@ -75,13 +75,63 @@ public void ProcessWithJsonBatch()
         AcadDocumentEditorCtrl.LogString($"\nOutput file: {outputFilePath}", LogTag.HEARTBEAT);
         
         // Process based on project type
-        using (var writer = File.CreateText(outputFilePath))
+        // IMPORTANT: Only create output JSON for failed validations
+        // If all validations pass, do NOT create the output file (so BatchProcessor knows it succeeded)
+        try
         {
             string resultJson = new ProjectReportGenerationCtrl().GetPrescrutinyReportForProjectType(parameters, new List<string>());
-            writer.Write(resultJson);
+            
+            // Parse the result to check if there are any failures
+            // Example: Check if result contains validation errors or failures
+            var result = JsonConvert.DeserializeObject<dynamic>(resultJson);
+            bool hasFailures = CheckForFailures(result); // Implement your failure detection logic
+            
+            // Helper method example:
+            // private bool CheckForFailures(dynamic result)
+            // {
+            //     // Check for validation errors, failed checks, etc.
+            //     // Return true if any failures found, false if all passed
+            //     if (result.ValidationErrors != null && result.ValidationErrors.Count > 0)
+            //         return true;
+            //     if (result.FailedChecks != null && result.FailedChecks.Count > 0)
+            //         return true;
+            //     return false;
+            // }
+            
+            if (hasFailures)
+            {
+                // Only create output JSON if there are failures
+                using (var writer = File.CreateText(outputFilePath))
+                {
+                    writer.Write(resultJson);
+                }
+                AcadDocumentEditorCtrl.LogString($"\n⚠️ Processing completed with failures: {outputFileName}", LogTag.HEARTBEAT);
+            }
+            else
+            {
+                // No failures - do NOT create output file (indicates success to BatchProcessor)
+                AcadDocumentEditorCtrl.LogString($"\n✅ Processing completed successfully (no output file created)", LogTag.HEARTBEAT);
+            }
         }
-        
-        AcadDocumentEditorCtrl.LogString($"\n✅ Processing completed successfully: {outputFileName}", LogTag.HEARTBEAT);
+        catch (Exception ex)
+        {
+            // On exception, create output JSON with error information
+            var errorResult = new
+            {
+                Error = true,
+                ErrorMessage = ex.Message,
+                DrawingName = drawingName,
+                Timestamp = timestamp
+            };
+            
+            using (var writer = File.CreateText(outputFilePath))
+            {
+                writer.Write(JsonConvert.SerializeObject(errorResult, Formatting.Indented));
+            }
+            
+            AcadDocumentEditorCtrl.LogString($"\n❌ Exception occurred, error JSON created: {outputFileName}", LogTag.HEARTBEAT);
+            throw; // Re-throw to mark as failed in BatchProcessor
+        }
     }
     catch (System.Exception e)
     {

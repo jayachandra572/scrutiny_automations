@@ -173,7 +173,7 @@ namespace BatchProcessor
                 NewtonsoftDll = TxtNewtonsoftDll.Text,
                 CrxAppDll = TxtCrxAppDll.Text,
                 AutoCADPath = TxtAutoCADPath.Text,
-                SelectedCommand = (CmbCommand.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "ProcessWithJsonBatch",
+                SelectedCommand = (CmbCommand.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "RunPreScrutinyValidationsBatch",
                 MaxParallel = int.TryParse(TxtMaxParallel.Text, out int mp) ? mp : 4,
                 VerboseLogging = ChkVerbose.IsChecked ?? false
             };
@@ -304,7 +304,7 @@ namespace BatchProcessor
                 string outputFolder = TxtOutputFolder.Text;
                 string csvFile = TxtCsvFile.Text;
                 string configFile = ""; // No config file - CSV provides all parameters
-                string command = (CmbCommand.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "ProcessWithJsonBatch";
+                string command = (CmbCommand.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "RunPreScrutinyValidationsBatch";
                 int maxParallel = int.Parse(TxtMaxParallel.Text);
                 bool verbose = ChkVerbose.IsChecked ?? false;
 
@@ -353,15 +353,29 @@ namespace BatchProcessor
                 Console.SetOut(new TextBoxWriter(this));
 
                 // Run processing
-                await processor.ProcessFolderAsync(inputFolder, outputFolder, configFile);
+                var summary = await processor.ProcessFolderAsync(inputFolder, outputFolder, configFile);
 
                 // Restore console output
                 Console.SetOut(originalOut);
 
-                TxtStatus.Text = "Processing complete!";
-                LogMessage("\n✅ All processing complete!");
-                
-                WpfMessageBox.Show("Batch processing completed successfully!", "Success", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
+                // Display failed files and non-processed files
+                DisplayFailedFiles(summary.FailedFiles);
+                DisplayNonProcessedFiles(summary.NonProcessedFiles, summary.NonProcessedFilesWithErrors);
+
+                int totalIssues = summary.FailedFiles.Count + summary.NonProcessedFiles.Count;
+                if (totalIssues == 0)
+                {
+                    TxtStatus.Text = "Processing complete! All files processed successfully.";
+                    LogMessage("\n✅ All processing complete!");
+                    WpfMessageBox.Show("Batch processing completed successfully!", "Success", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
+                }
+                else
+                {
+                    TxtStatus.Text = $"Processing complete! {summary.FailedFiles.Count} validation failure(s), {summary.NonProcessedFiles.Count} non-processed file(s).";
+                    LogMessage($"\n⚠️ Processing complete with {summary.FailedFiles.Count} validation failure(s) and {summary.NonProcessedFiles.Count} non-processed file(s).");
+                    WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} validation failure(s) (JSON created)\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.", 
+                        "Completed with Issues", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                }
             }
             catch (Exception ex)
             {
@@ -446,6 +460,118 @@ namespace BatchProcessor
             }
 
             return true;
+        }
+
+        #endregion
+
+        #region Failed Files Display
+
+        private void DisplayFailedFiles(List<string> failedFiles)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => DisplayFailedFiles(failedFiles));
+                return;
+            }
+
+            // Clear previous failed files
+            StkFailedFiles.Children.Clear();
+
+            if (failedFiles == null || failedFiles.Count == 0)
+            {
+                GrpFailedFiles.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            // Show the failed files section
+            GrpFailedFiles.Visibility = Visibility.Visible;
+
+            // Add header
+            var header = new TextBlock
+            {
+                Text = $"Total Validation Failures: {failedFiles.Count}",
+                FontWeight = FontWeights.Bold,
+                FontSize = 12,
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            StkFailedFiles.Children.Add(header);
+
+            // Add each failed file
+            foreach (var fileName in failedFiles)
+            {
+                var fileBlock = new TextBlock
+                {
+                    Text = $"  ❌ {fileName}",
+                    FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                    FontSize = 11,
+                    Margin = new Thickness(5, 2, 0, 2),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                StkFailedFiles.Children.Add(fileBlock);
+            }
+        }
+
+        private void DisplayNonProcessedFiles(List<string> nonProcessedFiles, Dictionary<string, string> nonProcessedFilesWithErrors)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => DisplayNonProcessedFiles(nonProcessedFiles, nonProcessedFilesWithErrors));
+                return;
+            }
+
+            // Clear previous non-processed files
+            StkNonProcessedFiles.Children.Clear();
+
+            if (nonProcessedFiles == null || nonProcessedFiles.Count == 0)
+            {
+                GrpNonProcessedFiles.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            // Show the non-processed files section
+            GrpNonProcessedFiles.Visibility = Visibility.Visible;
+
+            // Add header
+            var header = new TextBlock
+            {
+                Text = $"Total Non-Processed Files: {nonProcessedFiles.Count}",
+                FontWeight = FontWeights.Bold,
+                FontSize = 12,
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Orange),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            StkNonProcessedFiles.Children.Add(header);
+
+            // Add each non-processed file with error message
+            foreach (var fileName in nonProcessedFiles)
+            {
+                var fileBlock = new TextBlock
+                {
+                    Text = $"  ⚠️ {fileName}",
+                    FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                    FontSize = 11,
+                    Margin = new Thickness(5, 2, 0, 2),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                StkNonProcessedFiles.Children.Add(fileBlock);
+
+                // Add error message if available
+                if (nonProcessedFilesWithErrors != null && nonProcessedFilesWithErrors.TryGetValue(fileName, out var errorMessage))
+                {
+                    var errorBlock = new TextBlock
+                    {
+                        Text = $"      Error: {errorMessage}",
+                        FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                        FontSize = 10,
+                        Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.DarkGray),
+                        Margin = new Thickness(10, 0, 0, 4),
+                        TextWrapping = TextWrapping.Wrap,
+                        FontStyle = FontStyles.Italic
+                    };
+                    StkNonProcessedFiles.Children.Add(errorBlock);
+                }
+            }
         }
 
         #endregion

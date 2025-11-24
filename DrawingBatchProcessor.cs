@@ -33,7 +33,7 @@ namespace BatchProcessor
         {
             _accoreconsoleExePath = accoreconsoleExePath;
             _dllsToLoad = dllsToLoad ?? new List<string>();
-            _mainCommand = string.IsNullOrWhiteSpace(mainCommand) ? "ProcessWithJsonBatch" : mainCommand;
+            _mainCommand = string.IsNullOrWhiteSpace(mainCommand) ? "RunPreScrutinyValidationsBatch" : mainCommand;
             _maxParallelism = maxParallelism;
             _tempScriptFolder = string.IsNullOrWhiteSpace(tempScriptFolder) ? Path.GetTempPath() : tempScriptFolder;
             _enableVerboseLogging = enableVerboseLogging;
@@ -60,7 +60,8 @@ namespace BatchProcessor
         /// <summary>
         /// Process all DWG files in a folder
         /// </summary>
-        public async Task ProcessFolderAsync(
+        /// <returns>List of failed drawing file names</returns>
+        public async Task<ProcessingSummary> ProcessFolderAsync(
             string inputFolder,
             string outputFolder,
             string inputJsonPath)
@@ -68,7 +69,7 @@ namespace BatchProcessor
             if (!Directory.Exists(inputFolder))
             {
                 Console.WriteLine($"ERROR: Input folder not found: {inputFolder}");
-                return;
+                return new ProcessingSummary { FailedFiles = new List<string>(), NonProcessedFiles = new List<string>() };
             }
 
             if (!Directory.Exists(outputFolder))
@@ -76,6 +77,13 @@ namespace BatchProcessor
                 Directory.CreateDirectory(outputFolder);
                 Console.WriteLine($"Created output folder: {outputFolder}");
             }
+
+            // Create timestamped subfolder for this batch run
+            var batchStartTime = DateTime.Now;
+            string timestamp = batchStartTime.ToString("yyyyMMdd_HHmmss_fff");
+            string timestampedOutputFolder = Path.Combine(outputFolder, timestamp);
+            Directory.CreateDirectory(timestampedOutputFolder);
+            Console.WriteLine($"Created timestamped output folder: {timestampedOutputFolder}");
 
             // Validate DLLs exist
             ValidateDlls();
@@ -86,7 +94,7 @@ namespace BatchProcessor
             if (dwgFiles.Length == 0)
             {
                 Console.WriteLine($"No DWG files found in {inputFolder}");
-                return;
+                return new ProcessingSummary { FailedFiles = new List<string>(), NonProcessedFiles = new List<string>() };
             }
 
             Console.WriteLine($"\n╔══════════════════════════════════════════════════════════════╗");
@@ -94,6 +102,7 @@ namespace BatchProcessor
             Console.WriteLine($"╚══════════════════════════════════════════════════════════════╝");
             Console.WriteLine($"\n📁 Input Folder:  {inputFolder}");
             Console.WriteLine($"📁 Output Folder: {outputFolder}");
+            Console.WriteLine($"📁 Batch Folder:  {timestampedOutputFolder}");
             Console.WriteLine($"📋 Input JSON:    {inputJsonPath}");
             Console.WriteLine($"📄 Total Files:   {dwgFiles.Length}");
             Console.WriteLine($"⚙️  Max Parallel:  {_maxParallelism}");
@@ -122,7 +131,7 @@ namespace BatchProcessor
                 var result = await ProcessSingleDrawingAsync(
                     dwgFile,
                     inputJsonPath,
-                    outputFolder);
+                    timestampedOutputFolder);
 
                 lock (results)
                 {
@@ -133,8 +142,27 @@ namespace BatchProcessor
             var endTime = DateTime.Now;
             var duration = endTime - startTime;
 
+            // Separate failed files (processed but validation failed - has JSON) 
+            // from non-processed files (error before processing - no JSON)
+            var failedFiles = results
+                .Where(r => !r.Success && r.WasProcessed)
+                .Select(r => r.DrawingName)
+                .ToList();
+            
+            var nonProcessedFiles = results
+                .Where(r => !r.Success && !r.WasProcessed)
+                .Select(r => new { r.DrawingName, r.ErrorMessage })
+                .ToList();
+
             // Print summary
-            PrintSummary(results, duration);
+            PrintSummary(results, duration, timestampedOutputFolder);
+
+            return new ProcessingSummary 
+            { 
+                FailedFiles = failedFiles,
+                NonProcessedFiles = nonProcessedFiles.Select(x => x.DrawingName).ToList(),
+                NonProcessedFilesWithErrors = nonProcessedFiles.ToDictionary(x => x.DrawingName, x => x.ErrorMessage ?? "Unknown error")
+            };
         }
 
         /// <summary>
@@ -217,6 +245,7 @@ namespace BatchProcessor
                         {
                             Console.WriteLine($"  [{result.DrawingName}] ❌ ERROR: No config available for this drawing");
                             result.Success = false;
+                            result.WasProcessed = false; // Not processed - error before AutoCAD
                             result.ErrorMessage = "No configuration available (not in CSV and no base config)";
                             return result;
                         }
@@ -236,6 +265,7 @@ namespace BatchProcessor
                 {
                     Console.WriteLine($"  [{result.DrawingName}] ❌ ERROR: No config content available");
                     result.Success = false;
+                    result.WasProcessed = false; // Not processed - error before AutoCAD
                     result.ErrorMessage = "No configuration content available";
                     return result;
                 }
@@ -312,7 +342,19 @@ namespace BatchProcessor
                 result.Duration = result.EndTime - result.StartTime;
                 result.ExitCode = process.ExitCode;
                 result.Output = outputBuilder.ToString();
-                result.Success = process.ExitCode == 0;
+                
+                // Mark as processed (AutoCAD process was started)
+                result.WasProcessed = true;
+                
+                // Check if output JSON was created (only created for failed files)
+                string expectedJsonPath = Path.Combine(outputFolder, $"{result.DrawingName}.json");
+                bool jsonCreated = File.Exists(expectedJsonPath);
+                
+                // Success logic: No JSON file = all validations passed (success)
+                // Failure logic: JSON file exists = validations failed
+                // Note: We only mark as "failed" if JSON exists, regardless of exit code
+                // This ensures failed files list matches the JSON files created
+                result.Success = !jsonCreated;
 
                 // Clean up temp script and parameter files
                 try { File.Delete(tempScriptPath); } catch { }
@@ -331,42 +373,25 @@ namespace BatchProcessor
 
                 if (result.Success)
                 {
-                    // Verify output JSON was created
-                    string expectedJsonPath = Path.Combine(outputFolder, $"{result.DrawingName}.json");
-                    bool jsonCreated = File.Exists(expectedJsonPath);
-                    
-                    if (jsonCreated)
-                    {
-                        Console.WriteLine($"[{timestamp}] ✅ Completed: {result.DrawingName} ({result.Duration.TotalSeconds:F1}s) - JSON created");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[{timestamp}] ⚠️  Completed: {result.DrawingName} ({result.Duration.TotalSeconds:F1}s) - BUT JSON NOT FOUND at: {expectedJsonPath}");
-                        Console.WriteLine($"  [{result.DrawingName}] 🔍 Check if CrxApp command is reading environment variables!");
-                        
-                        // List what files ARE in the output folder for debugging
-                        if (Directory.Exists(outputFolder))
-                        {
-                            var filesInOutput = Directory.GetFiles(outputFolder, "*.json");
-                            Console.WriteLine($"  [{result.DrawingName}] 📂 Files in output folder: {filesInOutput.Length}");
-                            if (filesInOutput.Length > 0 && _enableVerboseLogging)
-                            {
-                                foreach (var f in filesInOutput.Take(5))
-                                {
-                                    Console.WriteLine($"      - {Path.GetFileName(f)}");
-                                }
-                            }
-                        }
-                    }
+                    // Success: No JSON file created (all validations passed)
+                    Console.WriteLine($"[{timestamp}] ✅ Completed: {result.DrawingName} ({result.Duration.TotalSeconds:F1}s) - All validations passed");
                 }
                 else
                 {
-                    Console.WriteLine($"[{timestamp}] ❌ Failed: {result.DrawingName} (Exit code: {result.ExitCode})");
+                    // Failed: JSON file exists (validations failed)
+                    Console.WriteLine($"[{timestamp}] ❌ Failed: {result.DrawingName} ({result.Duration.TotalSeconds:F1}s) - Failures detected (JSON created)");
+                    
+                    // Log exit code for debugging if non-zero
+                    if (process.ExitCode != 0)
+                    {
+                        Console.WriteLine($"[{timestamp}] ⚠️  Note: Process exit code was {process.ExitCode}");
+                    }
                 }
             }
             catch (Exception ex)
             {
                 result.Success = false;
+                result.WasProcessed = false; // Not processed - exception before/during AutoCAD
                 result.ErrorMessage = ex.Message;
                 result.EndTime = DateTime.Now;
                 result.Duration = result.EndTime - result.StartTime;
@@ -443,29 +468,42 @@ namespace BatchProcessor
             return tempScriptPath;
         }
 
-        private void PrintSummary(List<ProcessingResult> results, TimeSpan duration)
+        private void PrintSummary(List<ProcessingResult> results, TimeSpan duration, string outputFolder)
         {
             Console.WriteLine($"\n{new string('═', 64)}");
             Console.WriteLine($"  PROCESSING SUMMARY");
             Console.WriteLine($"{new string('═', 64)}");
 
             int successful = results.Count(r => r.Success);
-            int failed = results.Count(r => !r.Success);
+            int failedValidation = results.Count(r => !r.Success && r.WasProcessed);
+            int nonProcessed = results.Count(r => !r.Success && !r.WasProcessed);
+            int totalFailed = failedValidation + nonProcessed;
 
-            Console.WriteLine($"\n  ✅ Successful: {successful}");
-            Console.WriteLine($"  ❌ Failed:     {failed}");
-            Console.WriteLine($"  📊 Total:      {results.Count}");
-            Console.WriteLine($"  ⏱️  Duration:   {duration.TotalMinutes:F2} minutes");
+            Console.WriteLine($"\n  ✅ Successful:        {successful}");
+            Console.WriteLine($"  ❌ Validation Failed: {failedValidation} (JSON created)");
+            Console.WriteLine($"  ⚠️  Non-Processed:     {nonProcessed} (errors before processing)");
+            Console.WriteLine($"  📊 Total:             {results.Count}");
+            Console.WriteLine($"  ⏱️  Duration:          {duration.TotalMinutes:F2} minutes");
+            Console.WriteLine($"  📁 Output:            {outputFolder}");
             
             if (results.Count > 0)
             {
-                Console.WriteLine($"  ⚡ Avg Speed:  {duration.TotalSeconds / results.Count:F2} sec/file");
+                Console.WriteLine($"  ⚡ Avg Speed:         {duration.TotalSeconds / results.Count:F2} sec/file");
             }
 
-            if (failed > 0)
+            if (failedValidation > 0)
             {
-                Console.WriteLine($"\n  Failed Files:");
-                foreach (var result in results.Where(r => !r.Success))
+                Console.WriteLine($"\n  Validation Failed Files (JSON created):");
+                foreach (var result in results.Where(r => !r.Success && r.WasProcessed))
+                {
+                    Console.WriteLine($"    - {result.DrawingName}");
+                }
+            }
+
+            if (nonProcessed > 0)
+            {
+                Console.WriteLine($"\n  Non-Processed Files (errors before processing):");
+                foreach (var result in results.Where(r => !r.Success && !r.WasProcessed))
                 {
                     Console.WriteLine($"    - {result.DrawingName}");
                     if (!string.IsNullOrEmpty(result.ErrorMessage))
@@ -490,6 +528,14 @@ namespace BatchProcessor
         public int ExitCode { get; set; }
         public string Output { get; set; }
         public string ErrorMessage { get; set; }
+        public bool WasProcessed { get; set; } // True if AutoCAD process was started, false if error before processing
+    }
+
+    public class ProcessingSummary
+    {
+        public List<string> FailedFiles { get; set; } = new List<string>(); // Processed but validation failed (has JSON)
+        public List<string> NonProcessedFiles { get; set; } = new List<string>(); // Not processed (errors before AutoCAD)
+        public Dictionary<string, string> NonProcessedFilesWithErrors { get; set; } = new Dictionary<string, string>(); // File name -> error message
     }
 }
 

@@ -32,7 +32,7 @@ namespace BatchProcessor.Configuration
         /// Default AutoCAD command (used if AvailableCommands is empty or no selection made)
         /// Default: ProcessWithJsonBatch
         /// </summary>
-        public string MainCommand { get; set; } = "ProcessWithJsonBatch";
+        public string MainCommand { get; set; } = "RunPreScrutinyValidationsBatch";
 
         /// <summary>
         /// Maximum number of drawings to process in parallel
