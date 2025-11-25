@@ -11,6 +11,7 @@ namespace BatchProcessor
     {
         /// <summary>
         /// Save diff report to output folder (JSON and Text formats)
+        /// Creates a subfolder for individual file diff logs
         /// Returns the path to the saved JSON file
         /// </summary>
         public string SaveDiffReport(DiffReport report, string outputFolder, bool saveOnlyIfDifferent = true)
@@ -35,15 +36,189 @@ namespace BatchProcessor
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             string baseFileName = $"diff_report_{timestamp}";
 
-            // Save JSON format
-            string jsonPath = Path.Combine(outputFolder, $"{baseFileName}.json");
+            // Create subfolder for all diff files (summary and individual file logs)
+            string diffLogsSubfolder = Path.Combine(outputFolder, $"diff_logs_{timestamp}");
+            Directory.CreateDirectory(diffLogsSubfolder);
+
+            // Save individual file diff logs in subfolder (JSON format only)
+            SaveIndividualFileDiffLogs(report, diffLogsSubfolder);
+
+            // Save main summary report in subfolder (JSON format only)
+            string jsonPath = Path.Combine(diffLogsSubfolder, $"{baseFileName}.json");
             ExportToJson(report, jsonPath);
 
-            // Save Text format
-            string textPath = Path.Combine(outputFolder, $"{baseFileName}.txt");
-            ExportToText(report, textPath);
-
             return jsonPath;
+        }
+
+        /// <summary>
+        /// Save individual file diff logs in the subfolder (JSON format only)
+        /// Returns the number of files saved
+        /// </summary>
+        private int SaveIndividualFileDiffLogs(DiffReport report, string subfolder)
+        {
+            var filesWithDifferences = report.FileResults
+                .Where(r => !r.FilesMatch && !r.IsMissingInLatest && !r.IsMissingInReference)
+                .ToList();
+
+            int filesSaved = 0;
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+
+            foreach (var result in filesWithDifferences)
+            {
+                if (result.Differences.Count == 0)
+                    continue;
+
+                // Create safe filename (remove invalid characters)
+                string safeFileName = Path.GetFileNameWithoutExtension(result.FileName);
+                string fileName = $"{safeFileName}_diff.json";
+
+                // Remove invalid path characters
+                char[] invalidChars = Path.GetInvalidFileNameChars();
+                foreach (char c in invalidChars)
+                {
+                    fileName = fileName.Replace(c, '_');
+                }
+
+                string filePath = Path.Combine(subfolder, fileName);
+
+                // Build differences array in the new format
+                var differences = new List<object>();
+
+                foreach (var diff in result.Differences)
+                {
+                    // Convert DifferenceType to string
+                    string typeString = diff.Type switch
+                    {
+                        DifferenceType.Added => "Added",
+                        DifferenceType.Removed => "Removed",
+                        DifferenceType.Modified => "Modified",
+                        DifferenceType.TypeChanged => "TypeChanged",
+                        _ => "Unknown"
+                    };
+
+                    // Build the difference object
+                    var diffObj = new Dictionary<string, object?>
+                    {
+                        ["path"] = diff.Path,
+                        ["type"] = typeString
+                    };
+
+                    // Add actualValue (ReferenceValue) and modifiedValue (LatestValue)
+                    if (diff.ReferenceValue != null)
+                    {
+                        diffObj["actualValue"] = diff.ReferenceValue;
+                    }
+                    if (diff.LatestValue != null)
+                    {
+                        diffObj["modifiedValue"] = diff.LatestValue;
+                    }
+
+                    // Add entityID and entityIDKey if available
+                    if (!string.IsNullOrEmpty(diff.IdValue))
+                    {
+                        // Try to parse as number if possible, otherwise keep as string
+                        if (long.TryParse(diff.IdValue, out long longId))
+                        {
+                            diffObj["entityID"] = longId;
+                        }
+                        else if (double.TryParse(diff.IdValue, out double doubleId))
+                        {
+                            diffObj["entityID"] = doubleId;
+                        }
+                        else
+                        {
+                            diffObj["entityID"] = diff.IdValue;
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(diff.IdKey))
+                    {
+                        diffObj["entityIDKey"] = diff.IdKey;
+                    }
+
+                    differences.Add(diffObj);
+                }
+
+                // Build the output JSON structure
+                var output = new Dictionary<string, object>
+                {
+                    ["differences"] = differences
+                };
+
+                string json = JsonSerializer.Serialize(output, options);
+                File.WriteAllText(filePath, json);
+                filesSaved++;
+            }
+
+            return filesSaved;
+        }
+
+        /// <summary>
+        /// Format path to root['key'][index]['property'] format with ID if available
+        /// </summary>
+        private string FormatPath(string path, string? idValue)
+        {
+            if (string.IsNullOrEmpty(path))
+                return "root";
+
+            // Convert dot notation to bracket notation
+            // e.g., "Building[0].MinClearanceBetweenBuildingAndTotLot" -> "root['Building'][0]['MinClearanceBetweenBuildingAndTotLot']"
+            string formatted = "root";
+            
+            // Use regex to split by dots and brackets while preserving them
+            var parts = System.Text.RegularExpressions.Regex.Split(path, @"(\[|\]|\.)");
+            
+            foreach (var part in parts)
+            {
+                if (string.IsNullOrEmpty(part))
+                    continue;
+                    
+                if (part == ".")
+                {
+                    formatted += "']['";
+                }
+                else if (part == "[")
+                {
+                    formatted += "'][";
+                }
+                else if (part == "]")
+                {
+                    formatted += "]";
+                }
+                else
+                {
+                    // Check if it's a number (array index) or a property name
+                    if (int.TryParse(part, out _))
+                    {
+                        formatted += part;
+                    }
+                    else
+                    {
+                        if (!formatted.EndsWith("'") && !formatted.EndsWith("]"))
+                        {
+                            formatted += "']['";
+                        }
+                        formatted += part;
+                    }
+                }
+            }
+            
+            if (!formatted.EndsWith("']") && !formatted.EndsWith("]"))
+            {
+                formatted += "']";
+            }
+
+            // Add ID if available
+            if (!string.IsNullOrEmpty(idValue))
+            {
+                formatted += $" (ID: {idValue})";
+            }
+
+            return formatted;
         }
 
         /// <summary>
@@ -102,6 +277,10 @@ namespace BatchProcessor
                 foreach (var result in filesWithDifferences)
                 {
                     sb.AppendLine($"📄 {result.FileName}");
+                    if (!string.IsNullOrEmpty(result.Id))
+                    {
+                        sb.AppendLine($"   ID: {result.Id}");
+                    }
                     sb.AppendLine("───────────────────────────────────────────────────────────────");
 
                     foreach (var diff in result.Differences)

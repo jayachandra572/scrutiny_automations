@@ -10,6 +10,8 @@ namespace BatchProcessor.Models
         public string? ErrorMessage { get; set; }
         public bool IsMissingInLatest { get; set; }
         public bool IsMissingInReference { get; set; }
+        public string? Id { get; set; }  // Extracted ID value from JSON file
+        public string? IdKey { get; set; }  // The key name used to extract the ID (e.g., "plotID", "id", "AbuttingRoadID")
     }
 }
 

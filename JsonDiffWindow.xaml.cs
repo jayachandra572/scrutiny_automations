@@ -403,15 +403,19 @@ namespace BatchProcessor
                 if (!string.IsNullOrEmpty(savedPath))
                 {
                     string jsonFile = Path.GetFileName(savedPath);
-                    string textFile = jsonFile.Replace(".json", ".txt");
+                    
+                    // Extract timestamp from filename to construct subfolder name
+                    string timestamp = jsonFile.Replace("diff_report_", "").Replace(".json", "");
+                    string diffLogsSubfolder = $"diff_logs_{timestamp}";
 
                     // We're already on UI thread when called from Dispatcher.Invoke
                     PanelSavedFiles.Visibility = Visibility.Visible;
-                    TxtSavedFiles.Text = $"{jsonFile}\n{textFile}";
+                    TxtSavedFiles.Text = $"All files saved in:\n  {diffLogsSubfolder}/\n\n  Summary: {jsonFile}\n  Individual file logs: *.json";
 
                     LogMessage($"\n✅ Diff report saved:");
-                    LogMessage($"   JSON: {jsonFile}");
-                    LogMessage($"   Text: {textFile}");
+                    LogMessage($"   Location: {diffLogsSubfolder}/");
+                    LogMessage($"   Summary: {jsonFile}");
+                    LogMessage($"   Individual file logs: *.json");
                 }
                 else
                 {
