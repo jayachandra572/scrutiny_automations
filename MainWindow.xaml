@@ -24,12 +24,37 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
+        <!-- Header with Back Button -->
         <Border Grid.Row="0" Background="#2C3E50" Padding="15" Margin="0,0,0,15" CornerRadius="5">
-            <StackPanel>
-                <TextBlock Text="🎯 AutoCAD Batch Processor" FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
-                <TextBlock Text="Process multiple DWG files in parallel" FontSize="12" Foreground="#ECF0F1" HorizontalAlignment="Center" Margin="0,5,0,0"/>
-            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- Back Button -->
+                <Button Grid.Column="0" x:Name="BtnBack" Content="⬅" Width="40" Height="40" FontSize="20" 
+                        Background="Transparent" Foreground="White" BorderThickness="0" 
+                        Click="BtnBack_Click" Cursor="Hand" Margin="0,0,10,0"
+                        ToolTip="Back to Mode Selection">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#34495E"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                
+                <!-- Title -->
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="🎯 AutoCAD Batch Processor" FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Process multiple DWG files in parallel" FontSize="12" Foreground="#ECF0F1" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                </StackPanel>
+            </Grid>
         </Border>
 
         <!-- Input/Output Paths -->

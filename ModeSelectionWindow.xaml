@@ -1,0 +1,185 @@
+<Window x:Class="BatchProcessor.ModeSelectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Batch Processor - Select Mode" Height="400" Width="600"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="#F5F5F5">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#2C3E50" Padding="20">
+            <StackPanel>
+                <TextBlock Text="🎯 AutoCAD Batch Processor" 
+                          FontSize="24" 
+                          FontWeight="Bold" 
+                          Foreground="White" 
+                          HorizontalAlignment="Center"/>
+                <TextBlock Text="Select the mode you want to use" 
+                          FontSize="14" 
+                          Foreground="#ECF0F1" 
+                          HorizontalAlignment="Center" 
+                          Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Mode Selection Cards -->
+        <Grid Grid.Row="1" Margin="30">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Commands Execution Mode -->
+            <Border Grid.Column="0" 
+                   Background="White" 
+                   CornerRadius="10" 
+                   Padding="20"
+                   Cursor="Hand"
+                   MouseLeftButtonDown="Border_CommandsMode_Click"
+                   BorderThickness="2"
+                   BorderBrush="#3498DB">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#2980B9"/>
+                                <Setter Property="Background" Value="#EBF5FB"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="⚙️" 
+                              FontSize="48" 
+                              HorizontalAlignment="Center" 
+                              Margin="0,0,0,10"/>
+                    <TextBlock Text="Commands Execution" 
+                              FontSize="20" 
+                              FontWeight="Bold" 
+                              HorizontalAlignment="Center" 
+                              Margin="0,0,0,15"
+                              Foreground="#2C3E50"/>
+                    <TextBlock TextWrapping="Wrap" 
+                              TextAlignment="Center" 
+                              Foreground="#7F8C8D"
+                              FontSize="13"
+                              LineHeight="20">
+                        <Run Text="Process AutoCAD drawings in batch mode.&#x0a;"/>
+                        <Run Text="Execute commands on multiple DWG files&#x0a;"/>
+                        <Run Text="and generate JSON output files."/>
+                    </TextBlock>
+                    <Button x:Name="BtnCommandsMode" 
+                           Content="Select" 
+                           Margin="0,20,0,0" 
+                           Height="40"
+                           Background="#3498DB"
+                           Foreground="White"
+                           FontSize="14"
+                           FontWeight="Bold"
+                           BorderThickness="0"
+                           Click="BtnCommandsMode_Click"
+                           Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#2980B9"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <!-- Separator -->
+            <TextBlock Grid.Column="1" 
+                      Text="OR" 
+                      FontSize="16" 
+                      FontWeight="Bold" 
+                      Foreground="#95A5A6"
+                      VerticalAlignment="Center"
+                      HorizontalAlignment="Center"/>
+
+            <!-- JSON Diff Comparison Mode -->
+            <Border Grid.Column="2" 
+                   Background="White" 
+                   CornerRadius="10" 
+                   Padding="20"
+                   Cursor="Hand"
+                   MouseLeftButtonDown="Border_DiffMode_Click"
+                   BorderThickness="2"
+                   BorderBrush="#27AE60">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#229954"/>
+                                <Setter Property="Background" Value="#EAFAF1"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="🔍" 
+                              FontSize="48" 
+                              HorizontalAlignment="Center" 
+                              Margin="0,0,0,10"/>
+                    <TextBlock Text="JSON Diff Comparison" 
+                              FontSize="20" 
+                              FontWeight="Bold" 
+                              HorizontalAlignment="Center" 
+                              Margin="0,0,0,15"
+                              Foreground="#2C3E50"/>
+                    <TextBlock TextWrapping="Wrap" 
+                              TextAlignment="Center" 
+                              Foreground="#7F8C8D"
+                              FontSize="13"
+                              LineHeight="20">
+                        <Run Text="Compare JSON files between two folders.&#x0a;"/>
+                        <Run Text="Find differences between reference and&#x0a;"/>
+                        <Run Text="latest JSON output files."/>
+                    </TextBlock>
+                    <Button x:Name="BtnDiffMode" 
+                           Content="Select" 
+                           Margin="0,20,0,0" 
+                           Height="40"
+                           Background="#27AE60"
+                           Foreground="White"
+                           FontSize="14"
+                           FontWeight="Bold"
+                           BorderThickness="0"
+                           Click="BtnDiffMode_Click"
+                           Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#229954"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" Background="#ECF0F1" Padding="15">
+            <TextBlock Text="💡 Tip: You can switch modes anytime from the menu" 
+                      TextWrapping="Wrap" 
+                      Foreground="#7F8C8D" 
+                      FontSize="11" 
+                      HorizontalAlignment="Center"/>
+        </Border>
+    </Grid>
+</Window>
+

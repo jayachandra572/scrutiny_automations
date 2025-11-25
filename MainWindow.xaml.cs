@@ -17,12 +17,22 @@ namespace BatchProcessor
     public partial class MainWindow : Window
     {
         private const string UserSettingsFile = "user_settings.json";
+        private bool _isNavigatingBack = false;
 
         public MainWindow()
         {
             InitializeComponent();
             LoadCommandsFromAppSettings();
             LoadUserSettings();
+            
+            // Handle window closing - shutdown app when main window closes (unless navigating back)
+            this.Closing += (s, args) =>
+            {
+                if (!_isNavigatingBack && System.Windows.Application.Current.MainWindow == this)
+                {
+                    System.Windows.Application.Current.Shutdown();
+                }
+            };
         }
         
         private void LoadCommandsFromAppSettings()
@@ -792,6 +802,61 @@ namespace BatchProcessor
             }
 
             public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+        }
+
+        #endregion
+
+        #region Mode Switching
+
+        private void BtnBack_Click(object sender, RoutedEventArgs e)
+        {
+            // Set flag to prevent shutdown
+            _isNavigatingBack = true;
+            
+            // Go back to mode selection window
+            var modeSelectionWindow = new ModeSelectionWindow();
+            
+            // Set mode selection as MainWindow temporarily to prevent shutdown
+            System.Windows.Application.Current.MainWindow = modeSelectionWindow;
+            
+            // Close current window
+            this.Close();
+            
+            // Show mode selection window
+            if (modeSelectionWindow.ShowDialog() == true && modeSelectionWindow.IsModeSelected)
+            {
+                Window newWindow;
+
+                switch (modeSelectionWindow.Mode)
+                {
+                    case ModeSelectionWindow.SelectedMode.JsonDiffComparison:
+                        newWindow = new JsonDiffWindow();
+                        break;
+
+                    case ModeSelectionWindow.SelectedMode.CommandsExecution:
+                    default:
+                        newWindow = new MainWindow();
+                        break;
+                }
+
+                // Update MainWindow property
+                System.Windows.Application.Current.MainWindow = newWindow;
+                
+                // Ensure window is enabled and visible
+                newWindow.IsEnabled = true;
+                newWindow.Visibility = Visibility.Visible;
+                newWindow.WindowState = WindowState.Normal;
+                
+                // Show and activate (Closing event handler is set in constructor)
+                newWindow.Show();
+                newWindow.Activate();
+                newWindow.Focus();
+            }
+            else
+            {
+                // If no mode selected, shutdown
+                System.Windows.Application.Current.Shutdown();
+            }
         }
 
         #endregion
