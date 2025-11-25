@@ -145,6 +145,11 @@ namespace BatchProcessor
             BrowseForDll(TxtCrxAppDll, "Select CrxApp.dll");
         }
 
+        private void BtnBrowseUIPlugin_Click(object sender, RoutedEventArgs e)
+        {
+            BrowseForDll(TxtUIPluginDll, "Select UIPlugin.dll");
+        }
+
         private void BtnBrowseAutoCAD_Click(object sender, System.Windows.RoutedEventArgs e)
         {
             var dialog = new WpfOpenFileDialog
@@ -232,6 +237,7 @@ namespace BatchProcessor
                 CommonUtilsDll = TxtCommonUtilsDll.Text,
                 NewtonsoftDll = TxtNewtonsoftDll.Text,
                 CrxAppDll = TxtCrxAppDll.Text,
+                UIPluginDll = TxtUIPluginDll.Text,
                 AutoCADPath = TxtAutoCADPath.Text,
                 SelectedCommand = (CmbCommand.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "RunPreScrutinyValidationsBatch",
                 MaxParallel = int.TryParse(TxtMaxParallel.Text, out int mp) ? mp : 4,
@@ -259,6 +265,7 @@ namespace BatchProcessor
                         TxtCommonUtilsDll.Text = settings.CommonUtilsDll ?? "";
                         TxtNewtonsoftDll.Text = settings.NewtonsoftDll ?? "";
                         TxtCrxAppDll.Text = settings.CrxAppDll ?? "";
+                        TxtUIPluginDll.Text = settings.UIPluginDll ?? "";
                         TxtAutoCADPath.Text = settings.AutoCADPath ?? "";
                         TxtMaxParallel.Text = settings.MaxParallel.ToString();
                         ChkVerbose.IsChecked = settings.VerboseLogging;
@@ -304,6 +311,29 @@ namespace BatchProcessor
                         TxtCommonUtilsDll.Text = appSettings.DllsToLoad[0];
                         TxtNewtonsoftDll.Text = appSettings.DllsToLoad[1];
                         TxtCrxAppDll.Text = appSettings.DllsToLoad[2];
+                        
+                        // Check if UIPlugin DLL is in the list (4th position or find by name)
+                        if (appSettings.DllsToLoad.Count >= 4)
+                        {
+                            // Check if 4th DLL is UIPlugin
+                            string dll4 = appSettings.DllsToLoad[3];
+                            if (dll4.Contains("UIPlugin", StringComparison.OrdinalIgnoreCase))
+                            {
+                                TxtUIPluginDll.Text = dll4;
+                            }
+                        }
+                        else
+                        {
+                            // Try to find UIPlugin in any position
+                            foreach (var dll in appSettings.DllsToLoad)
+                            {
+                                if (dll.Contains("UIPlugin", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    TxtUIPluginDll.Text = dll;
+                                    break;
+                                }
+                            }
+                        }
                     }
 
                     TxtMaxParallel.Text = appSettings.MaxParallelProcesses.ToString();
@@ -370,8 +400,19 @@ namespace BatchProcessor
                 bool verbose = ChkVerbose.IsChecked ?? false;
 
                 var dllsToLoad = new List<string>();
+                
+                // Load dependencies first (CommonUtils and Newtonsoft.Json)
                 dllsToLoad.Add(TxtCommonUtilsDll.Text);
                 dllsToLoad.Add(TxtNewtonsoftDll.Text);
+                
+                // Load UIPlugin DLL (if provided) - no automatic dependency loading
+                if (!string.IsNullOrWhiteSpace(TxtUIPluginDll.Text))
+                {
+                    dllsToLoad.Add(TxtUIPluginDll.Text);
+                    LogMessage($"✅ UIPlugin.dll will be loaded: {Path.GetFileName(TxtUIPluginDll.Text)}");
+                }
+                
+                // Load CrxApp DLL last (depends on CommonUtils and Newtonsoft.Json)
                 dllsToLoad.Add(TxtCrxAppDll.Text);
 
                 LogMessage("═══════════════════════════════════════════════════════════════");
@@ -416,6 +457,21 @@ namespace BatchProcessor
                 {
                     // Run processing
                     var summary = await processor.ProcessFolderAsync(inputFolder, outputFolder, configFile);
+                    
+                    // Check if UIPlugin.dll failed to load and show alert
+                    if (summary.UIPluginLoadFailed && !string.IsNullOrWhiteSpace(TxtUIPluginDll.Text))
+                    {
+                        WpfMessageBox.Show(
+                            "UIPlugin.dll failed to load!\n\n" +
+                            "This may cause UIPlugin commands to be unavailable.\n\n" +
+                            "Please check:\n" +
+                            "1. UIPlugin.dll path is correct\n" +
+                            "2. All required dependencies are available\n" +
+                            "3. Check the log output for detailed error messages",
+                            "UIPlugin.dll Load Failed",
+                            WpfMessageBoxButton.OK,
+                            WpfMessageBoxImage.Warning);
+                    }
 
                     // Display failed files and non-processed files
                     DisplayFailedFiles(summary.FailedFiles);
@@ -503,6 +559,13 @@ namespace BatchProcessor
             if (string.IsNullOrWhiteSpace(TxtCrxAppDll.Text) || !File.Exists(TxtCrxAppDll.Text))
             {
                 WpfMessageBox.Show("Please select a valid CrxApp.dll file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                return false;
+            }
+
+            // Validate UIPlugin DLL (optional - only if provided)
+            if (!string.IsNullOrWhiteSpace(TxtUIPluginDll.Text) && !File.Exists(TxtUIPluginDll.Text))
+            {
+                WpfMessageBox.Show("UIPlugin.dll file does not exist. Please select a valid file or leave it empty.", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                 return false;
             }
 
@@ -717,6 +780,7 @@ namespace BatchProcessor
         public string? CommonUtilsDll { get; set; }
         public string? NewtonsoftDll { get; set; }
         public string? CrxAppDll { get; set; }
+        public string? UIPluginDll { get; set; }
         public string? AutoCADPath { get; set; }
         public string? SelectedCommand { get; set; }
         public int MaxParallel { get; set; } = 4;

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace BatchProcessor
@@ -157,11 +158,15 @@ namespace BatchProcessor
             // Print summary
             PrintSummary(results, duration, timestampedOutputFolder);
 
+            // Check if UIPlugin.dll failed to load in any drawing
+            bool uiPluginFailed = results.Any(r => r.UIPluginLoadFailed);
+
             return new ProcessingSummary 
             { 
                 FailedFiles = failedFiles,
                 NonProcessedFiles = nonProcessedFiles.Select(x => x.DrawingName).ToList(),
-                NonProcessedFilesWithErrors = nonProcessedFiles.ToDictionary(x => x.DrawingName, x => x.ErrorMessage ?? "Unknown error")
+                NonProcessedFilesWithErrors = nonProcessedFiles.ToDictionary(x => x.DrawingName, x => x.ErrorMessage ?? "Unknown error"),
+                UIPluginLoadFailed = uiPluginFailed
             };
         }
 
@@ -332,6 +337,7 @@ namespace BatchProcessor
                 // Capture output
                 var outputBuilder = new StringBuilder();
                 var dllLoadErrors = new List<string>();
+                bool uiPluginLoadFailed = false;
                 
                 process.OutputDataReceived += (sender, e) =>
                 {
@@ -341,7 +347,14 @@ namespace BatchProcessor
                         
                         string data = e.Data.Trim();
                         
-                        // Check for NETLOAD errors and success messages
+                        // Check for DLL loading messages
+                        if (data.Contains("[Loading]", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Always show loading messages
+                            Console.WriteLine($"  {data}");
+                        }
+                        
+                        // Check for NETLOAD errors
                         if (data.Contains("NETLOAD", StringComparison.OrdinalIgnoreCase) || 
                             data.Contains("netload", StringComparison.OrdinalIgnoreCase) ||
                             data.Contains("Assembly", StringComparison.OrdinalIgnoreCase))
@@ -357,13 +370,12 @@ namespace BatchProcessor
                             {
                                 dllLoadErrors.Add(data);
                                 Console.WriteLine($"  ❌ DLL Load Error: {data}");
-                            }
-                            else if (data.Contains("successfully", StringComparison.OrdinalIgnoreCase) ||
-                                     data.Contains("loaded", StringComparison.OrdinalIgnoreCase) ||
-                                     data.Contains("Assembly", StringComparison.OrdinalIgnoreCase))
-                            {
-                                // Extract DLL name if possible
-                                Console.WriteLine($"  ✅ DLL Loaded: {data}");
+                                
+                                // Check if this is UIPlugin.dll error
+                                if (data.Contains("UIPlugin", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    uiPluginLoadFailed = true;
+                                }
                             }
                         }
                         
@@ -386,7 +398,7 @@ namespace BatchProcessor
                                              string.IsNullOrWhiteSpace(data);
                         
                         // Only show important output or errors (but skip if already shown above)
-                        if (!isVerboseNoise && !data.Contains("NETLOAD", StringComparison.OrdinalIgnoreCase))
+                        if (!isVerboseNoise && !data.Contains("NETLOAD", StringComparison.OrdinalIgnoreCase) && !data.Contains("[Loading]", StringComparison.OrdinalIgnoreCase))
                         {
                             // Show all non-noise output without prefix (separator already shows which drawing)
                             Console.WriteLine($"  {e.Data}");
@@ -409,12 +421,42 @@ namespace BatchProcessor
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
 
-                await process.WaitForExitAsync();
+                // Add timeout to prevent hanging (30 minutes max per drawing)
+                using (var cts = new CancellationTokenSource(TimeSpan.FromMinutes(30)))
+                {
+                    try
+                    {
+                        await process.WaitForExitAsync(cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Timeout - kill the process
+                        try
+                        {
+                            if (!process.HasExited)
+                            {
+                                process.Kill();
+                                Console.WriteLine($"  ⚠️  WARNING: Process timed out after 30 minutes - killed");
+                                result.ErrorMessage = "Process timed out after 30 minutes";
+                                result.WasProcessed = false; // Mark as not processed due to timeout
+                            }
+                        }
+                        catch (Exception killEx)
+                        {
+                            Console.WriteLine($"  ⚠️  WARNING: Failed to kill timed-out process: {killEx.Message}");
+                        }
+                    }
+                }
 
                 result.EndTime = DateTime.Now;
                 result.Duration = result.EndTime - result.StartTime;
                 result.ExitCode = process.ExitCode;
                 result.Output = outputBuilder.ToString();
+                
+                // Check for UIPlugin.dll loading failure
+                // Only mark as failed if we actually detected an error in the output
+                // (We can't verify success without LISP messages, but AutoCAD will show errors if NETLOAD fails)
+                result.UIPluginLoadFailed = uiPluginLoadFailed;
                 
                 // Check for DLL loading errors
                 if (dllLoadErrors.Count > 0)
@@ -530,8 +572,19 @@ namespace BatchProcessor
             // Load all DLLs in order (verification already done at start)
             foreach (var dllPath in _dllsToLoad)
             {
-                scriptBuilder.AppendLine($"NETLOAD \"{dllPath}\"");
+                string dllName = Path.GetFileName(dllPath);
+                // Escape backslashes for LISP string (double backslashes)
+                string escapedDllPath = dllPath.Replace("\\", "\\\\");
+                // Print DLL name and full path for verification
+                scriptBuilder.AppendLine($"(princ (strcat \"\\n[Loading] \" \"{dllName}\" \"\\n\"))");
+                scriptBuilder.AppendLine($"(princ (strcat \"[Loading] Path: \" \"{escapedDllPath}\" \"\\n\"))");
+                // Use escaped path in NETLOAD command
+                scriptBuilder.AppendLine($"NETLOAD \"{escapedDllPath}\"");
             }
+            
+            // Small delay to ensure all DLLs are fully loaded and commands are registered
+            scriptBuilder.AppendLine("(princ \"\\n[Loading] Waiting for DLLs to fully initialize...\\n\")");
+            scriptBuilder.AppendLine("(command \"_.DELAY\" \"500\" \"\")"); // 500ms delay with empty string to avoid waiting for input
 
             // Set LISP variables that the command can read (traditional AutoCAD method)
             scriptBuilder.AppendLine($"(setq BATCH_INPUT_JSON \"{inputJsonPath.Replace("\\", "\\\\")}\")");
@@ -628,6 +681,7 @@ namespace BatchProcessor
         public string Output { get; set; }
         public string ErrorMessage { get; set; }
         public bool WasProcessed { get; set; } // True if AutoCAD process was started, false if error before processing
+        public bool UIPluginLoadFailed { get; set; } // True if UIPlugin.dll failed to load
     }
 
     public class ProcessingSummary
@@ -635,6 +689,7 @@ namespace BatchProcessor
         public List<string> FailedFiles { get; set; } = new List<string>(); // Processed but validation failed (has JSON)
         public List<string> NonProcessedFiles { get; set; } = new List<string>(); // Not processed (errors before AutoCAD)
         public Dictionary<string, string> NonProcessedFilesWithErrors { get; set; } = new Dictionary<string, string>(); // File name -> error message
+        public bool UIPluginLoadFailed { get; set; } // True if UIPlugin.dll failed to load in any drawing
     }
 }
 
