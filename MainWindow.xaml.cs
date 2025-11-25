@@ -1,13 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfMessageBoxButton = System.Windows.MessageBoxButton;
 using WpfMessageBoxImage = System.Windows.MessageBoxImage;
+using WpfMessageBoxResult = System.Windows.MessageBoxResult;
 using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WinFormsFolderBrowser = System.Windows.Forms.FolderBrowserDialog;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
@@ -18,6 +22,15 @@ namespace BatchProcessor
     {
         private const string UserSettingsFile = "user_settings.json";
         private bool _isNavigatingBack = false;
+        private CancellationTokenSource? _cancellationTokenSource;
+        private Task<ProcessingSummary>? _currentProcessingTask;
+        private int _totalFiles = 0;
+        private int _completedFiles = 0;
+        
+        // Timer tracking for active files
+        private Dictionary<string, DateTime> _fileStartTimes = new Dictionary<string, DateTime>();
+        private System.Windows.Threading.DispatcherTimer? _timerUpdateTimer;
+        private Dictionary<string, TextBlock> _timerTextBlocks = new Dictionary<string, TextBlock>();
 
         public MainWindow()
         {
@@ -25,14 +38,237 @@ namespace BatchProcessor
             LoadCommandsFromAppSettings();
             LoadUserSettings();
             
+            // Initialize timer for updating file timers
+            _timerUpdateTimer = new System.Windows.Threading.DispatcherTimer();
+            _timerUpdateTimer.Interval = TimeSpan.FromSeconds(1); // Update every second (lightweight - only updates text)
+            _timerUpdateTimer.Tick += TimerUpdateTimer_Tick;
+            
             // Handle window closing - shutdown app when main window closes (unless navigating back)
             this.Closing += (s, args) =>
             {
                 if (!_isNavigatingBack && System.Windows.Application.Current.MainWindow == this)
                 {
+                    _timerUpdateTimer?.Stop();
                     System.Windows.Application.Current.Shutdown();
                 }
             };
+        }
+        
+        private void TimerUpdateTimer_Tick(object? sender, EventArgs e)
+        {
+            UpdateActiveFileTimers();
+        }
+        
+        private void UpdateActiveFileTimers()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => UpdateActiveFileTimers());
+                return;
+            }
+            
+            if (_fileStartTimes.Count == 0)
+            {
+                // No active files - clear and hide the group
+                StkActiveTimers.Children.Clear();
+                _timerTextBlocks.Clear();
+                GrpActiveTimers.Visibility = Visibility.Collapsed;
+                return;
+            }
+            
+            // Show the group
+            GrpActiveTimers.Visibility = Visibility.Visible;
+            
+            var now = DateTime.Now;
+            var sortedFiles = _fileStartTimes.OrderBy(kvp => kvp.Value).ToList();
+            
+            // Remove timers for files that are no longer active
+            var activeFileNames = new HashSet<string>(sortedFiles.Select(kvp => kvp.Key));
+            var filesToRemove = _timerTextBlocks.Keys.Where(k => !activeFileNames.Contains(k)).ToList();
+            foreach (var fileName in filesToRemove)
+            {
+                _timerTextBlocks.Remove(fileName);
+            }
+            
+            // Update or create timer displays
+            for (int i = 0; i < sortedFiles.Count; i++)
+            {
+                var kvp = sortedFiles[i];
+                string fileName = kvp.Key;
+                DateTime startTime = kvp.Value;
+                TimeSpan elapsed = now - startTime;
+                
+                // Format time: MM:SS or HH:MM:SS if over an hour
+                string timeString;
+                if (elapsed.TotalHours >= 1)
+                {
+                    timeString = $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
+                }
+                else
+                {
+                    timeString = $"{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
+                }
+                
+                // Check if UI element already exists
+                if (_timerTextBlocks.ContainsKey(fileName))
+                {
+                    // OPTIMIZATION: Only update the text and color (much faster than recreating UI)
+                    var timerBlock = _timerTextBlocks[fileName];
+                    timerBlock.Text = $"⏱️ {timeString}";
+                    
+                    // Update color based on elapsed time
+                    if (elapsed.TotalMinutes >= 6)
+                    {
+                        timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red);
+                        timerBlock.Text = $"⏱️ {timeString} ⚠️ TIMEOUT";
+                    }
+                    else if (elapsed.TotalMinutes >= 5)
+                    {
+                        timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Orange);
+                    }
+                    else
+                    {
+                        timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.DarkBlue);
+                    }
+                }
+                else
+                {
+                    // Create new UI element only when file is first added
+                    var timerGrid = new Grid
+                    {
+                        Margin = new Thickness(5, 2, 0, 2)
+                    };
+                    timerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    timerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    
+                    var fileNameBlock = new TextBlock
+                    {
+                        Text = $"📄 {Path.GetFileNameWithoutExtension(fileName)}",
+                        FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                        FontSize = 11,
+                        TextWrapping = TextWrapping.NoWrap,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        ToolTip = Path.GetFileNameWithoutExtension(fileName)
+                    };
+                    Grid.SetColumn(fileNameBlock, 0);
+                    
+                    var timerBlock = new TextBlock
+                    {
+                        Text = $"⏱️ {timeString}",
+                        FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                        FontSize = 11,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.DarkBlue),
+                        Margin = new Thickness(10, 0, 0, 0),
+                        MinWidth = 100,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    Grid.SetColumn(timerBlock, 1);
+                    
+                    // Set initial color
+                    if (elapsed.TotalMinutes >= 6)
+                    {
+                        timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red);
+                        timerBlock.Text = $"⏱️ {timeString} ⚠️ TIMEOUT";
+                    }
+                    else if (elapsed.TotalMinutes >= 5)
+                    {
+                        timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Orange);
+                    }
+                    
+                    timerGrid.Children.Add(fileNameBlock);
+                    timerGrid.Children.Add(timerBlock);
+                    
+                    // Insert at correct position to maintain sort order
+                    if (i < StkActiveTimers.Children.Count)
+                    {
+                        StkActiveTimers.Children.Insert(i, timerGrid);
+                    }
+                    else
+                    {
+                        StkActiveTimers.Children.Add(timerGrid);
+                    }
+                    
+                    _timerTextBlocks[fileName] = timerBlock;
+                }
+            }
+            
+            // Remove UI elements for files that are no longer active
+            for (int i = StkActiveTimers.Children.Count - 1; i >= 0; i--)
+            {
+                var child = StkActiveTimers.Children[i];
+                if (child is Grid grid && grid.Children.Count > 0)
+                {
+                    var fileNameBlock = grid.Children[0] as TextBlock;
+                    if (fileNameBlock != null)
+                    {
+                        string displayName = fileNameBlock.Text.Replace("📄 ", "");
+                        string fullFileName = _fileStartTimes.Keys.FirstOrDefault(k => Path.GetFileNameWithoutExtension(k) == displayName);
+                        if (fullFileName == null || !_fileStartTimes.ContainsKey(fullFileName))
+                        {
+                            StkActiveTimers.Children.RemoveAt(i);
+                        }
+                    }
+                }
+            }
+        }
+        
+        private void StartFileTimer(string fileName)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => StartFileTimer(fileName));
+                return;
+            }
+            
+            _fileStartTimes[fileName] = DateTime.Now;
+            
+            // Start the update timer if not already running
+            if (_timerUpdateTimer != null && !_timerUpdateTimer.IsEnabled)
+            {
+                _timerUpdateTimer.Start();
+            }
+            
+            UpdateActiveFileTimers();
+        }
+        
+        private void StopFileTimer(string fileName)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => StopFileTimer(fileName));
+                return;
+            }
+            
+            if (_fileStartTimes.ContainsKey(fileName))
+            {
+                _fileStartTimes.Remove(fileName);
+            }
+            
+            _timerTextBlocks.Remove(fileName); // Clean up reference
+            
+            // Stop the update timer if no more active files
+            if (_fileStartTimes.Count == 0 && _timerUpdateTimer != null)
+            {
+                _timerUpdateTimer.Stop();
+            }
+            
+            UpdateActiveFileTimers();
+        }
+        
+        private void ClearAllFileTimers()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => ClearAllFileTimers());
+                return;
+            }
+            
+            _fileStartTimes.Clear();
+            _timerTextBlocks.Clear(); // Clean up references
+            _timerUpdateTimer?.Stop();
+            UpdateActiveFileTimers();
         }
         
         private void LoadCommandsFromAppSettings()
@@ -173,6 +409,37 @@ namespace BatchProcessor
             if (dialog.ShowDialog() == true)
             {
                 TxtAutoCADPath.Text = dialog.FileName;
+            }
+        }
+
+        private void BtnSetMaxParallel_Click(object sender, System.Windows.RoutedEventArgs e)
+        {
+            try
+            {
+                string inputFolder = TxtInputFolder.Text;
+                if (string.IsNullOrWhiteSpace(inputFolder) || !Directory.Exists(inputFolder))
+                {
+                    WpfMessageBox.Show("Please select an input folder first", "No Input Folder", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    return;
+                }
+
+                // Count DWG files in the input folder
+                var dwgFiles = Directory.GetFiles(inputFolder, "*.dwg", SearchOption.TopDirectoryOnly);
+                int fileCount = dwgFiles.Length;
+
+                if (fileCount == 0)
+                {
+                    WpfMessageBox.Show("No DWG files found in the input folder", "No Files Found", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
+                    return;
+                }
+
+                // Set max parallel to file count
+                TxtMaxParallel.Text = fileCount.ToString();
+                LogMessage($"✅ Max parallel set to {fileCount} (matching number of DWG files in input folder)");
+            }
+            catch (Exception ex)
+            {
+                WpfMessageBox.Show($"Error counting files: {ex.Message}", "Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
             }
         }
 
@@ -384,6 +651,52 @@ namespace BatchProcessor
 
         private async void BtnRun_Click(object sender, RoutedEventArgs e)
         {
+            // If a task is already running, cancel it
+            if (_currentProcessingTask != null && !_currentProcessingTask.IsCompleted)
+            {
+                LogMessage("\n⚠️ Cancelling previous task...");
+                TxtStatus.Text = "Cancelling...";
+                
+                // Cancel the token
+                _cancellationTokenSource?.Cancel();
+                
+                // Kill all console and AutoCAD processes
+                KillAllConsoleProcesses();
+                
+                try
+                {
+                    // Wait for task to complete with timeout
+                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5));
+                    var completedTask = await Task.WhenAny(_currentProcessingTask, timeoutTask);
+                    
+                    if (completedTask == timeoutTask)
+                    {
+                        LogMessage("⚠️ Task cancellation taking longer than expected...");
+                    }
+                    else
+                    {
+                        await _currentProcessingTask;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    LogMessage("✅ Previous task cancelled.");
+                }
+                catch (Exception ex)
+                {
+                    LogMessage($"⚠️ Error cancelling previous task: {ex.Message}");
+                }
+                finally
+                {
+                    _cancellationTokenSource?.Dispose();
+                    _currentProcessingTask = null;
+                    BtnRun.Content = "▶ Run Batch Processing";
+                    TxtStatus.Text = "Processing cancelled";
+                    ClearAllFileTimers();
+                }
+                return; // Exit after cancelling
+            }
+
             // Validate inputs
             if (!ValidateInputs())
             {
@@ -393,10 +706,13 @@ namespace BatchProcessor
             // Save settings for next time
             SaveUserSettings();
 
-            // Disable run button
-            BtnRun.IsEnabled = false;
+            // Keep run button enabled - user can click again to cancel
+            // BtnRun.IsEnabled = false; // REMOVED - keep button enabled
+            BtnRun.Content = "⏹ Stop Processing";
             TxtStatus.Text = "Processing...";
             TxtLog.Clear();
+            _completedFiles = 0;
+            _totalFiles = 0;
 
             try
             {
@@ -443,30 +759,115 @@ namespace BatchProcessor
                     enableVerboseLogging: verbose
                 );
 
+                // Redirect console output to our log (must be before CSV validation)
+                var originalOut = Console.Out;
+                var textBoxWriter = new TextBoxWriter(this);
+                Console.SetOut(textBoxWriter);
+
                 // Enable CSV parameter mapping if CSV file is provided
+                bool csvEnabled = false;
                 if (!string.IsNullOrWhiteSpace(TxtCsvFile.Text) && File.Exists(TxtCsvFile.Text))
                 {
                     LogMessage($"\n📊 Enabling CSV parameter mapping...");
-                    bool csvEnabled = processor.EnableCsvMapping(TxtCsvFile.Text);
+                    csvEnabled = processor.EnableCsvMapping(TxtCsvFile.Text);
                     if (csvEnabled)
                     {
                         LogMessage($"✅ CSV mapping enabled - each drawing will use its specific parameters");
+                        
+                        // Validate that all drawings have parameters before processing
+                        LogMessage($"\n🔍 Validating drawings have parameters in CSV...");
+                        var missingParameterFiles = processor.ValidateDrawingsHaveParameters(inputFolder);
+                        
+                        if (missingParameterFiles.Count > 0)
+                        {
+                            LogMessage($"⚠️  Found {missingParameterFiles.Count} drawing file(s) without parameters in CSV:");
+                            foreach (var file in missingParameterFiles)
+                            {
+                                LogMessage($"   - {file}");
+                            }
+                            
+                            // Display missing parameter files
+                            DisplayMissingParameterFiles(missingParameterFiles);
+                            
+                            // Restore console output temporarily for message box
+                            Console.SetOut(originalOut);
+                            
+                            // Ask user if they want to continue
+                            var result = WpfMessageBox.Show(
+                                $"⚠️ Found {missingParameterFiles.Count} drawing file(s) without parameters in CSV.\n\n" +
+                                "These files will be skipped during processing.\n\n" +
+                                "Do you want to continue processing the remaining files?",
+                                "Missing Parameters",
+                                WpfMessageBoxButton.YesNo,
+                                WpfMessageBoxImage.Warning);
+                            
+                            // Restore text box writer
+                            Console.SetOut(textBoxWriter);
+                            
+                            if (result == MessageBoxResult.No)
+                            {
+                                LogMessage("\n❌ Processing cancelled by user due to missing parameters.");
+                                BtnRun.Content = "▶ Run Batch Processing";
+                                TxtStatus.Text = "Processing cancelled - files missing parameters";
+                                Console.SetOut(originalOut);
+                                return;
+                            }
+                            
+                            LogMessage("\n✅ Continuing with processing (files without parameters will be skipped)...");
+                        }
+                        else
+                        {
+                            LogMessage($"✅ All {Directory.GetFiles(inputFolder, "*.dwg").Length} drawing file(s) have parameters in CSV.");
+                            // Hide missing parameters section if no missing files
+                            Dispatcher.Invoke(() =>
+                            {
+                                GrpMissingParameters.Visibility = Visibility.Collapsed;
+                            });
+                        }
                     }
                     else
                     {
                         LogMessage($"⚠️  CSV mapping failed - will use default config for all drawings");
                     }
                 }
+                else
+                {
+                    // Hide missing parameters section if CSV is not used
+                    Dispatcher.Invoke(() =>
+                    {
+                        GrpMissingParameters.Visibility = Visibility.Collapsed;
+                    });
+                }
 
-                // Redirect console output to our log
-                var originalOut = Console.Out;
-                var textBoxWriter = new TextBoxWriter(this);
-                Console.SetOut(textBoxWriter);
+                // Create cancellation token source
+                _cancellationTokenSource = new CancellationTokenSource();
+                var cancellationToken = _cancellationTokenSource.Token;
+
+                // Create progress reporter
+                var progress = new Progress<(int completed, int total)>(update =>
+                {
+                    _completedFiles = update.completed;
+                    _totalFiles = update.total;
+                    Dispatcher.Invoke(() =>
+                    {
+                        TxtStatus.Text = $"Processing... {_completedFiles}/{_totalFiles} files completed";
+                    });
+                });
+                
+                // Clear timers when starting new batch
+                ClearAllFileTimers();
 
                 try
                 {
-                    // Run processing
-                    var summary = await processor.ProcessFolderAsync(inputFolder, outputFolder, configFile);
+                    // Run processing with cancellation and progress
+                    _currentProcessingTask = processor.ProcessFolderAsync(
+                        inputFolder, 
+                        outputFolder, 
+                        configFile, 
+                        cancellationToken, 
+                        progress);
+                    
+                    var summary = await _currentProcessingTask;
                     
                     // Check if UIPlugin.dll failed to load and show alert
                     if (summary.UIPluginLoadFailed && !string.IsNullOrWhiteSpace(TxtUIPluginDll.Text))
@@ -483,8 +884,8 @@ namespace BatchProcessor
                             WpfMessageBoxImage.Warning);
                     }
 
-                    // Re-enable the button immediately after processing completes
-                    BtnRun.IsEnabled = true;
+                    // Button stays enabled, just update status
+                    // BtnRun.IsEnabled = true; // REMOVED - button stays enabled
 
                     // Display failed files and non-processed files
                     DisplayFailedFiles(summary.FailedFiles);
@@ -520,6 +921,20 @@ namespace BatchProcessor
                         }
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    TxtStatus.Text = "❌ Processing cancelled";
+                    LogMessage("\n❌ Processing was cancelled by user.");
+                    BtnRun.Content = "▶ Run Batch Processing";
+                }
+                catch (Exception ex)
+                {
+                    // Button stays enabled
+                    TxtStatus.Text = "Error occurred";
+                    LogMessage($"\n❌ Error: {ex.Message}");
+                    WpfMessageBox.Show($"Error during processing:\n{ex.Message}", "Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
+                    BtnRun.Content = "▶ Run Batch Processing";
+                }
                 finally
                 {
                     // Always restore console output
@@ -529,22 +944,20 @@ namespace BatchProcessor
             }
             catch (Exception ex)
             {
-                // Re-enable button immediately on error
-                BtnRun.IsEnabled = true;
+                // Button stays enabled
                 TxtStatus.Text = "Error occurred";
                 LogMessage($"\n❌ Error: {ex.Message}");
                 WpfMessageBox.Show($"Error during processing:\n{ex.Message}", "Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
+                BtnRun.Content = "▶ Run Batch Processing";
             }
             finally
             {
-                // Ensure button is re-enabled (safety net in case of any edge cases)
-                if (!BtnRun.IsEnabled)
-                {
-                    Dispatcher.Invoke(() =>
-                    {
-                        BtnRun.IsEnabled = true;
-                    });
-                }
+                // Clean up
+                _currentProcessingTask = null;
+                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = null;
+                BtnRun.Content = "▶ Run Batch Processing";
+                ClearAllFileTimers();
             }
         }
 
@@ -618,14 +1031,78 @@ namespace BatchProcessor
                 return false;
             }
 
-            // Validate max parallel
-            if (!int.TryParse(TxtMaxParallel.Text, out int maxParallel) || maxParallel < 1 || maxParallel > 32)
+            // Validate max parallel (allow up to 100, or unlimited if user wants)
+            if (!int.TryParse(TxtMaxParallel.Text, out int maxParallel) || maxParallel < 1)
             {
-                WpfMessageBox.Show("Max parallel processes must be between 1 and 32", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                WpfMessageBox.Show("Max parallel processes must be at least 1", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                 return false;
+            }
+            
+            // Warn if very high (but allow it)
+            if (maxParallel > 50)
+            {
+                var result = WpfMessageBox.Show(
+                    $"You've set {maxParallel} parallel processes. This may consume significant system resources.\n\nDo you want to continue?",
+                    "High Parallelism Warning",
+                    WpfMessageBoxButton.YesNo,
+                    WpfMessageBoxImage.Warning);
+                if (result == WpfMessageBoxResult.No)
+                {
+                    return false;
+                }
             }
 
             return true;
+        }
+
+        #endregion
+
+        #region Missing Parameters Display
+
+        private void DisplayMissingParameterFiles(List<string> missingParameterFiles)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => DisplayMissingParameterFiles(missingParameterFiles));
+                return;
+            }
+
+            // Clear previous missing parameter files
+            StkMissingParameters.Children.Clear();
+
+            if (missingParameterFiles == null || missingParameterFiles.Count == 0)
+            {
+                GrpMissingParameters.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            // Show the missing parameters section
+            GrpMissingParameters.Visibility = Visibility.Visible;
+
+            // Add header
+            var header = new TextBlock
+            {
+                Text = $"Total Files Without Parameters: {missingParameterFiles.Count}",
+                FontWeight = FontWeights.Bold,
+                FontSize = 12,
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Orange),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            StkMissingParameters.Children.Add(header);
+
+            // Add each missing parameter file
+            foreach (var fileName in missingParameterFiles)
+            {
+                var fileBlock = new TextBlock
+                {
+                    Text = $"  📋 {fileName}",
+                    FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                    FontSize = 11,
+                    Margin = new Thickness(5, 2, 0, 2),
+                    TextWrapping = TextWrapping.Wrap
+                };
+                StkMissingParameters.Children.Add(fileBlock);
+            }
         }
 
         #endregion
@@ -759,6 +1236,44 @@ namespace BatchProcessor
                 TxtLog.AppendText(message + Environment.NewLine);
                 TxtLog.ScrollToEnd();
                 TxtLog.UpdateLayout();
+                
+                // Monitor log messages to track file processing start/end for timers
+                if (message.Contains("🔄 Starting processing:"))
+                {
+                    // Extract filename from message like "🔄 Starting processing: filename (1/10)"
+                    var match = System.Text.RegularExpressions.Regex.Match(message, @"Starting processing:\s*([^(]+)");
+                    if (match.Success)
+                    {
+                        string fileName = match.Groups[1].Value.Trim();
+                        StartFileTimer(fileName);
+                    }
+                }
+                else if (message.Contains("✅ Completed processing:") || message.Contains("❌ UNHANDLED EXCEPTION processing"))
+                {
+                    // Extract filename from completion message
+                    string fileName = "";
+                    if (message.Contains("Completed processing:"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(message, @"Completed processing:\s*([^(]+)");
+                        if (match.Success)
+                        {
+                            fileName = match.Groups[1].Value.Trim();
+                        }
+                    }
+                    else if (message.Contains("UNHANDLED EXCEPTION processing"))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(message, @"UNHANDLED EXCEPTION processing\s+([^:]+)");
+                        if (match.Success)
+                        {
+                            fileName = match.Groups[1].Value.Trim();
+                        }
+                    }
+                    
+                    if (!string.IsNullOrEmpty(fileName))
+                    {
+                        StopFileTimer(fileName);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -802,6 +1317,62 @@ namespace BatchProcessor
             }
 
             public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+        }
+
+        #endregion
+
+        #region Process Management
+
+        private void KillAllConsoleProcesses()
+        {
+            try
+            {
+                LogMessage("🛑 Killing all BatchProcessor and AutoCAD console processes...");
+                
+                int killedCount = 0;
+                
+                // Get all processes to kill
+                var processesToKill = Process.GetProcesses()
+                    .Where(p => 
+                        p.ProcessName.Equals("BatchProcessor", StringComparison.OrdinalIgnoreCase) ||
+                        p.ProcessName.Equals("acad", StringComparison.OrdinalIgnoreCase) ||
+                        p.ProcessName.Equals("acadConsole", StringComparison.OrdinalIgnoreCase) ||
+                        p.ProcessName.Equals("accoreconsole", StringComparison.OrdinalIgnoreCase) ||
+                        (p.MainWindowTitle != null && p.MainWindowTitle.Contains("AutoCAD", StringComparison.OrdinalIgnoreCase))
+                    )
+                    .ToList();
+
+                foreach (var process in processesToKill)
+                {
+                    try
+                    {
+                        // Skip the current process (this application)
+                        if (process.Id == Process.GetCurrentProcess().Id)
+                            continue;
+
+                        process.Kill();
+                        killedCount++;
+                        LogMessage($"   ✓ Killed process: {process.ProcessName} (PID: {process.Id})");
+                    }
+                    catch (Exception ex)
+                    {
+                        LogMessage($"   ⚠️ Could not kill process {process.ProcessName} (PID: {process.Id}): {ex.Message}");
+                    }
+                }
+
+                if (killedCount > 0)
+                {
+                    LogMessage($"✅ Successfully killed {killedCount} process(es).");
+                }
+                else
+                {
+                    LogMessage("ℹ️ No processes found to kill.");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"❌ Error killing processes: {ex.Message}");
+            }
         }
 
         #endregion

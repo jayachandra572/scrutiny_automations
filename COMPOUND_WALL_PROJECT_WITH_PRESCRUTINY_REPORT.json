@@ -1,0 +1,149 @@
+{
+  "plotData": {
+    "socialInfrastructureEntities": [],
+    "commonParkingSpaces": [],
+    "openSpaces": [],
+    "publicUtilityObjects": [],
+    "plotAreaData": {
+      "grossPlotArea": 28690.4193,
+      "netPlotArea": 28690.41933424457,
+      "plotAreaDeductions": {
+        "roadAffectedArea": 0.0,
+        "waterBodiesArea": 0.0,
+        "surrenderToAuthorityArea": 0.0,
+        "leftOverOwnersLandArea": 0.0,
+        "deductibleArea": 0.0
+      }
+    },
+    "internalRoads": [],
+    "existingAbuttingRoadWidth": 10.0,
+    "proposedAbuttingRoadWidth": 10.0,
+    "roadWideningInfoObjects": [],
+    "waterBodyObjects": [],
+    "nalaWideningObjects": [],
+    "bufferZoneObjects": [],
+    "surrenderToAuthorityAreaInfoObjects": [],
+    "leftoverOwnersLandObjects": [],
+    "podiumArea": 0.0,
+    "mainRoadsData": [
+      {
+        "mainRoadID": 5026,
+        "mainRoadType": "MAIN_ROAD",
+        "mainRoadName": "10m Wide Main Road",
+        "existingMainRoadWidth": 10.0,
+        "proposedMainRoadWidth": 10.0,
+        "distanceFromAbuttingRoadToNetPlot": 0.0,
+        "isMainAbuttingRoad": true,
+        "isCommercialImpactFeeRoad": false,
+        "roadSelectedFor": ""
+      }
+    ],
+    "plotLocationWiseSegmentData": [],
+    "plotDimensionsWRTMainRoad": [
+      {
+        "mainRoadID": 5026,
+        "privateRoadID": 0,
+        "plotWidth": 163.3474,
+        "plotDepth": 228.4311,
+        "pathWayRoadID": 0,
+        "plotFrontageWidth": 163.4121
+      }
+    ],
+    "podiums": [],
+    "connectingBridges": [],
+    "commonBasements": [],
+    "railwayProperties": [],
+    "notifiedHeritageStructures": [],
+    "notifiedReligiousStructures": [],
+    "privateRoads": [],
+    "isPlotAltered": false,
+    "previousPlotDetailsWhenPlotIsAltered": {
+      "previousCompoundWallPerimeter": 0.0,
+      "previousOrganisedOpenSpaceArea": 0.0,
+      "previousParkingAreaInPlot": 0.0,
+      "previousNetPlotArea": 0.0,
+      "previousGrossPlotArea": 0.0,
+      "previousPlotUse": "",
+      "previousPlotSubuse": "",
+      "previousTotalNetBuiltUpArea": 0.0,
+      "previousTotalNetResidentialBUA": 0.0,
+      "previousTotalNetNonResidentialBUA": 0.0,
+      "previousTotalNetParkingArea": 0.0,
+      "previousTotalVacantPlotArea": 0.0,
+      "previousPlottedArea": 0.0,
+      "previousAmenitiesPlotArea": 0.0,
+      "previousTotalAmenitiesBUA": 0.0
+    },
+    "pathwayRoads": [],
+    "peripheralRoads": [],
+    "publicUtilities": null,
+    "deductibleEntityObjects": [],
+    "plotID": 3879,
+    "netPlotIDs": [],
+    "proposedWorks": [],
+    "totLots": [],
+    "greenStrips": [],
+    "plotLevelAccessories": [
+      {
+        "parentID": 3879,
+        "accessoryID": 5122,
+        "accessoryName": "",
+        "accessoryType": "ENTRANCE_GATE",
+        "accessoryLength": 7.6388,
+        "accessoryWidth": 0.23,
+        "accessoryArea": 1.7569,
+        "accessoryHeight": 0.0,
+        "accessoryLocationInMandatorySetback": [],
+        "accessorySetBackInfo": {
+          "frontSetback": 0.0,
+          "rearSetback": 0.0,
+          "side1Setback": 0.0,
+          "side2Setback": 0.0
+        },
+        "accessoryToProposedWorkDistances": []
+      }
+    ],
+    "splays": [],
+    "trees": [],
+    "electricalLines": [],
+    "greenBelts": [],
+    "amenities": [],
+    "plotLevelRamps": [],
+    "plotLevelParking": [],
+    "plotLevelParkingUnits": [],
+    "plotLevelDriveways": [],
+    "compoundWall": {
+      "compoundWallIDs": [
+        151820
+      ],
+      "compoundWallHeight": 1.5,
+      "compoundWallLength": 684.2814
+    },
+    "compoundWallsInPlot": [
+      {
+        "compoundWallID": 151820,
+        "compoundWallHeight": 1.5,
+        "compoundWallLength": 684.2814,
+        "compoundWallLocation": [],
+        "structureType": "MASONRY_WALL"
+      }
+    ],
+    "rampEntranceSlabCuts": [],
+    "culverts": [],
+    "futureDevelopments": [],
+    "fuelPumpMachineries": [],
+    "canopies": [],
+    "plotLevelParkingArea": 0.0,
+    "plotLevelVisitorParkingArea": 0.0,
+    "isCornerPlot": false,
+    "treesCount": 0,
+    "entityRelations": {
+      "splayAligningRoadRelations": [],
+      "mainRoadToWideningRoadRelations": []
+    }
+  },
+  "landMortgages": [],
+  "userSelectedData": {
+    "userSelectedMainRoadID": 5026
+  }
+}

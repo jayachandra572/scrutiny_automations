@@ -59,13 +59,41 @@ namespace BatchProcessor
         }
 
         /// <summary>
+        /// Validate that all drawing files have parameters in CSV
+        /// Returns list of drawing files that don't have parameters
+        /// </summary>
+        public List<string> ValidateDrawingsHaveParameters(string inputFolder)
+        {
+            var missingParameterFiles = new List<string>();
+            
+            if (!_useCsvMapping || _csvMapper == null)
+            {
+                return missingParameterFiles; // No CSV mapping, so no validation needed
+            }
+
+            var dwgFiles = Directory.GetFiles(inputFolder, "*.dwg", SearchOption.TopDirectoryOnly);
+            
+            foreach (var dwgFile in dwgFiles)
+            {
+                if (!_csvMapper.HasDrawing(dwgFile))
+                {
+                    missingParameterFiles.Add(Path.GetFileName(dwgFile));
+                }
+            }
+            
+            return missingParameterFiles;
+        }
+
+        /// <summary>
         /// Process all DWG files in a folder
         /// </summary>
         /// <returns>List of failed drawing file names</returns>
         public async Task<ProcessingSummary> ProcessFolderAsync(
             string inputFolder,
             string outputFolder,
-            string inputJsonPath)
+            string inputJsonPath,
+            CancellationToken cancellationToken = default,
+            IProgress<(int completed, int total)>? progress = null)
         {
             if (!Directory.Exists(inputFolder))
             {
@@ -98,6 +126,9 @@ namespace BatchProcessor
                 return new ProcessingSummary { FailedFiles = new List<string>(), NonProcessedFiles = new List<string>() };
             }
 
+            // Report initial progress
+            progress?.Report((0, dwgFiles.Length));
+
             Console.WriteLine($"\n╔══════════════════════════════════════════════════════════════╗");
             Console.WriteLine($"║  AutoCAD Batch Processor (Standalone Mode)                  ║");
             Console.WriteLine($"╚══════════════════════════════════════════════════════════════╝");
@@ -123,20 +154,81 @@ namespace BatchProcessor
 
             var startTime = DateTime.Now;
             var results = new List<ProcessingResult>();
+            int completedCount = 0;
 
             // Process in parallel
-            var options = new ParallelOptions { MaxDegreeOfParallelism = _maxParallelism };
+            var options = new ParallelOptions 
+            { 
+                MaxDegreeOfParallelism = _maxParallelism,
+                CancellationToken = cancellationToken
+            };
 
             await Parallel.ForEachAsync(dwgFiles, options, async (dwgFile, ct) =>
             {
-                var result = await ProcessSingleDrawingAsync(
-                    dwgFile,
-                    inputJsonPath,
-                    timestampedOutputFolder);
+                // Check for cancellation before processing
+                cancellationToken.ThrowIfCancellationRequested();
 
-                lock (results)
+                ProcessingResult result = null;
+                string drawingName = Path.GetFileNameWithoutExtension(dwgFile);
+                
+                try
                 {
-                    results.Add(result);
+                    // Log start of processing for this file
+                    Console.WriteLine($"\n🔄 Starting processing: {drawingName} ({completedCount + 1}/{dwgFiles.Length})");
+                    
+                    result = await ProcessSingleDrawingAsync(
+                        dwgFile,
+                        inputJsonPath,
+                        timestampedOutputFolder);
+
+                    // Check for cancellation after processing
+                    cancellationToken.ThrowIfCancellationRequested();
+                    
+                    // Log completion
+                    Console.WriteLine($"✅ Completed processing: {drawingName} (Success: {result.Success})");
+                }
+                catch (OperationCanceledException)
+                {
+                    // Re-throw cancellation to stop processing
+                    Console.WriteLine($"\n⚠️ Processing cancelled for: {drawingName}");
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Catch any unhandled exceptions to prevent stopping the entire batch
+                    // Create a failed result for this file
+                    Console.WriteLine($"\n❌ UNHANDLED EXCEPTION processing {drawingName}: {ex.Message}");
+                    if (_enableVerboseLogging)
+                    {
+                        Console.WriteLine($"   Stack trace: {ex.StackTrace}");
+                    }
+                    
+                    result = new ProcessingResult
+                    {
+                        DrawingPath = dwgFile,
+                        DrawingName = drawingName,
+                        StartTime = DateTime.Now,
+                        EndTime = DateTime.Now,
+                        Success = false,
+                        WasProcessed = false, // Not processed due to exception
+                        ErrorMessage = $"Unhandled exception: {ex.Message}",
+                        ExitCode = -1
+                    };
+                }
+                finally
+                {
+                    // Always add result and report progress, even if there was an error
+                    if (result != null)
+                    {
+                        lock (results)
+                        {
+                            results.Add(result);
+                            completedCount++;
+                            // Report progress
+                            progress?.Report((completedCount, dwgFiles.Length));
+                            Console.WriteLine($"📊 Progress: {completedCount}/{dwgFiles.Length} files completed");
+                        }
+                    }
                 }
             });
 
@@ -313,8 +405,9 @@ namespace BatchProcessor
                     }
                 };
 
-                // Define the expected output filename
+                // Define the expected output filename (moved earlier for JSON monitoring)
                 string outputFileName = $"{result.DrawingName}.json";
+                string expectedJsonPath = Path.Combine(outputFolder, outputFileName);
                 
                 // Set environment variables for this specific process
                 // Pass JSON content directly via environment variable (no temp file needed!)
@@ -420,9 +513,14 @@ namespace BatchProcessor
                 process.Start();
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
+                
+                // Log process start for monitoring
+                Console.WriteLine($"  ▶ Process started (PID: {process.Id})");
 
-                // Add timeout to prevent hanging (30 minutes max per drawing)
-                using (var cts = new CancellationTokenSource(TimeSpan.FromMinutes(30)))
+                // Add timeout to prevent hanging (6 minutes max per drawing)
+                // IMPORTANT: Without proper timeout and cleanup, processes can hang indefinitely,
+                // blocking parallel processing slots and preventing next files from being processed
+                using (var cts = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
                 {
                     try
                     {
@@ -435,9 +533,22 @@ namespace BatchProcessor
                         {
                             if (!process.HasExited)
                             {
-                                process.Kill();
-                                Console.WriteLine($"  ⚠️  WARNING: Process timed out after 30 minutes - killed");
-                                result.ErrorMessage = "Process timed out after 30 minutes";
+                                Console.WriteLine($"  ⚠️  WARNING: Process timed out after 6 minutes - killing process tree...");
+                                try
+                                {
+                                    process.Kill(entireProcessTree: true); // Kill entire process tree including child processes
+                                }
+                                catch
+                                {
+                                    // Fallback to regular kill if tree kill fails
+                                    process.Kill();
+                                }
+                                // Wait for process to actually exit (with timeout)
+                                if (!process.WaitForExit(10000))
+                                {
+                                    Console.WriteLine($"  ⚠️  WARNING: Process did not exit after kill - forcing termination");
+                                }
+                                result.ErrorMessage = "Process timed out after 6 minutes";
                                 result.WasProcessed = false; // Mark as not processed due to timeout
                             }
                         }
@@ -447,11 +558,143 @@ namespace BatchProcessor
                         }
                     }
                 }
+                
+                // CRITICAL FIX: Ensure process has actually exited before proceeding
+                // Problem: WaitForExitAsync() can complete even if process is still running (race conditions)
+                // Impact: If we proceed without verifying exit, the process continues running and blocks next files
+                // Solution: Explicitly check HasExited and force kill if still running
+                if (!process.HasExited)
+                {
+                    try
+                    {
+                        Console.WriteLine($"  ⚠️  WARNING: Process still running after WaitForExitAsync - killing process tree...");
+                        try
+                        {
+                            // CRITICAL: Kill entire process tree (parent + all child processes)
+                            // Problem: AutoCAD spawns child processes that weren't being killed
+                            // Impact: Child processes would continue running, consuming resources and blocking file handles
+                            process.Kill(entireProcessTree: true); // Kill entire process tree including child processes
+                        }
+                        catch
+                        {
+                            // Fallback to regular kill if tree kill fails
+                            process.Kill();
+                        }
+                        if (!process.WaitForExit(10000))
+                        {
+                            Console.WriteLine($"  ⚠️  WARNING: Process did not exit after kill - may be stuck");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"  ⚠️  WARNING: Error killing process: {ex.Message}");
+                    }
+                }
+
+                // CRITICAL FIX: Properly close output streams to prevent process from staying alive
+                // Problem: BeginOutputReadLine() and BeginErrorReadLine() keep async handlers active
+                // Impact: If streams aren't cancelled, they can keep process references alive, preventing cleanup
+                // Solution: Explicitly cancel async reads and wait for output to be captured
+                if (process.HasExited)
+                {
+                    try
+                    {
+                        // Give a small delay to ensure all async output is captured
+                        // The output handlers will continue to receive data even after process exits
+                        await Task.Delay(500); // Reduced from 1000ms to 500ms
+                    }
+                    catch { /* Ignore delay errors */ }
+                    
+                    // Cancel async reads if still active (process has exited, so no more data)
+                    // This releases references to the process, allowing proper cleanup
+                    try
+                    {
+                        process.CancelOutputRead();
+                    }
+                    catch { /* Ignore if already closed or not started */ }
+                    
+                    try
+                    {
+                        process.CancelErrorRead();
+                    }
+                    catch { /* Ignore if already closed or not started */ }
+                }
+                else
+                {
+                    // Process didn't exit - cancel reads before killing
+                    // This prevents race conditions where output handlers interfere with process termination
+                    try
+                    {
+                        process.CancelOutputRead();
+                    }
+                    catch { /* Ignore if already closed */ }
+                    
+                    try
+                    {
+                        process.CancelErrorRead();
+                    }
+                    catch { /* Ignore if already closed */ }
+                }
 
                 result.EndTime = DateTime.Now;
                 result.Duration = result.EndTime - result.StartTime;
-                result.ExitCode = process.ExitCode;
+                
+                // Get exit code and output before disposing
+                int exitCode = process.HasExited ? process.ExitCode : -1;
+                result.ExitCode = exitCode;
                 result.Output = outputBuilder.ToString();
+                
+                // Log process completion status for monitoring
+                if (process.HasExited)
+                {
+                    Console.WriteLine($"  ✓ Process exited successfully (Exit Code: {exitCode}, Duration: {result.Duration.TotalSeconds:F1}s)");
+                }
+                else
+                {
+                    Console.WriteLine($"  ⚠️  WARNING: Process did not exit properly - was force killed");
+                }
+                
+                // CRITICAL FIX: Aggressive process cleanup to ensure resources are fully released
+                // Problem: Processes weren't being fully terminated, leaving handles open
+                // Impact: Open handles prevent new processes from starting, blocking parallel processing
+                // Solution: Multiple verification points, force kill, explicit disposal, and resource release delay
+                try
+                {
+                    if (process != null)
+                    {
+                        // Force kill if still running (including child processes)
+                        // This is a final safety check - process should already be killed above
+                        if (!process.HasExited)
+                        {
+                            try
+                            {
+                                try
+                                {
+                                    // Kill entire process tree to ensure no child processes remain
+                                    process.Kill(entireProcessTree: true); // Kill entire process tree including child processes
+                                }
+                                catch
+                                {
+                                    // Fallback to regular kill if tree kill fails (older .NET versions)
+                                    process.Kill();
+                                }
+                                process.WaitForExit(5000);
+                            }
+                            catch { /* Ignore kill errors */ }
+                        }
+                        
+                        // Dispose process and all its resources (closes handles, releases memory)
+                        process.Dispose();
+                        
+                        // Give a small delay to ensure process resources are fully released by OS
+                        // This prevents race conditions where next file tries to start before resources are free
+                        await Task.Delay(100);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  ⚠️  WARNING: Error disposing process: {ex.Message}");
+                }
                 
                 // Check for UIPlugin.dll loading failure
                 // Only mark as failed if we actually detected an error in the output
@@ -523,7 +766,7 @@ namespace BatchProcessor
                 {
                     // For validation commands: JSON file exists = validation failed
                     // Success = no JSON file (all validations passed)
-                    string expectedJsonPath = Path.Combine(outputFolder, $"{result.DrawingName}.json");
+                    // expectedJsonPath is already defined above
                     bool jsonCreated = File.Exists(expectedJsonPath);
                     
                     // Success logic: No JSON file = all validations passed (success)
@@ -672,8 +915,15 @@ namespace BatchProcessor
             // Execute the selected command
             scriptBuilder.AppendLine(_mainCommand);
 
-            // Quit
-            scriptBuilder.AppendLine("QUIT");
+            // CRITICAL: Add explicit delay and force QUIT to ensure process exits
+            // Even if command hangs, this ensures script continues
+            scriptBuilder.AppendLine("(princ \"\\n[Command execution completed - preparing to exit...]\\n\")");
+            scriptBuilder.AppendLine("(command \"_.DELAY\" \"100\" \"\")"); // Small delay to ensure command fully completes
+            
+            // Force quit - try both QUIT and _EXIT (some accoreconsole versions prefer _EXIT)
+            scriptBuilder.AppendLine("(princ \"\\n[Exiting AutoCAD...]\\n\")");
+            scriptBuilder.AppendLine("_EXIT"); // Use _EXIT instead of QUIT (more reliable in accoreconsole)
+            scriptBuilder.AppendLine("QUIT"); // Fallback to QUIT if _EXIT doesn't work
 
             string scriptContent = scriptBuilder.ToString();
             
@@ -717,6 +967,17 @@ namespace BatchProcessor
             if (results.Count > 0)
             {
                 Console.WriteLine($"  ⚡ Avg Speed:         {duration.TotalSeconds / results.Count:F2} sec/file");
+            }
+            
+            // Show per-file processing times
+            Console.WriteLine($"\n  📋 Per-File Processing Times:");
+            foreach (var result in results.OrderBy(r => r.StartTime))
+            {
+                string statusIcon = result.Success ? "✅" : "❌";
+                string timeDisplay = result.Duration.TotalSeconds < 60 
+                    ? $"{result.Duration.TotalSeconds:F1}s" 
+                    : $"{result.Duration.TotalMinutes:F2}m";
+                Console.WriteLine($"     {statusIcon} {result.DrawingName}: {timeDisplay}");
             }
 
             if (failedValidation > 0)
