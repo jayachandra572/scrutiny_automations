@@ -939,6 +939,16 @@ namespace BatchProcessor
                 {
                     // Always restore console output
                     Console.SetOut(originalOut);
+                    
+                    // Reset button state on UI thread
+                    Dispatcher.Invoke(() =>
+                    {
+                        BtnRun.Content = "▶ Run Batch Processing";
+                        if (TxtStatus.Text.Contains("Processing..."))
+                        {
+                            TxtStatus.Text = "Ready";
+                        }
+                    });
                 }
 
             }
@@ -1227,7 +1237,8 @@ namespace BatchProcessor
 
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.Invoke(() => LogMessage(message));
+                // Use BeginInvoke instead of Invoke to avoid blocking - this prevents UI freezing
+                Dispatcher.BeginInvoke(new Action(() => LogMessage(message)), System.Windows.Threading.DispatcherPriority.Background);
                 return;
             }
 
@@ -1235,7 +1246,8 @@ namespace BatchProcessor
             {
                 TxtLog.AppendText(message + Environment.NewLine);
                 TxtLog.ScrollToEnd();
-                TxtLog.UpdateLayout();
+                // Removed UpdateLayout() - it's expensive and causes UI blocking
+                // ScrollToEnd() is sufficient for scrolling
                 
                 // Monitor log messages to track file processing start/end for timers
                 if (message.Contains("🔄 Starting processing:"))

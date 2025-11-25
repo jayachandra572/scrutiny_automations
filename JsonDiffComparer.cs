@@ -13,7 +13,12 @@ namespace BatchProcessor
         /// <summary>
         /// Compare two folders of JSON files and generate a diff report
         /// </summary>
-        public DiffReport CompareFolders(string referenceFolder, string latestFolder, string? outputFolder = null)
+        /// <param name="referenceFolder">Folder containing reference/baseline JSON files</param>
+        /// <param name="latestFolder">Folder containing latest/current JSON files</param>
+        /// <param name="outputFolder">Optional output folder for diff files (if null, diff files won't be created)</param>
+        /// <param name="createDiffFiles">If true, creates diff JSON files in a subfolder when differences are found</param>
+        /// <param name="diffSubfolderName">Name of the subfolder for diff files (default: "diff")</param>
+        public DiffReport CompareFolders(string referenceFolder, string latestFolder, string? outputFolder = null, bool createDiffFiles = false, string diffSubfolderName = "diff")
         {
             var report = new DiffReport
             {
@@ -30,6 +35,17 @@ namespace BatchProcessor
             if (!Directory.Exists(latestFolder))
             {
                 throw new DirectoryNotFoundException($"Latest folder not found: {latestFolder}");
+            }
+
+            // Create diff subfolder if needed
+            string? diffSubfolder = null;
+            if (createDiffFiles && !string.IsNullOrEmpty(outputFolder))
+            {
+                diffSubfolder = Path.Combine(outputFolder, diffSubfolderName);
+                if (!Directory.Exists(diffSubfolder))
+                {
+                    Directory.CreateDirectory(diffSubfolder);
+                }
             }
 
             // Get all JSON files from both folders
@@ -70,6 +86,25 @@ namespace BatchProcessor
                 {
                     // Both files exist, compare them
                     result = CompareFiles(referencePath!, latestPath!);
+
+                    // Create diff file if differences found and output folder is specified
+                    if (createDiffFiles && !result.FilesMatch && result.Differences != null && result.Differences.Count > 0 && diffSubfolder != null)
+                    {
+                        try
+                        {
+                            string diffFileName = $"{baseName}_diff.json";
+                            string diffFilePath = Path.Combine(diffSubfolder, diffFileName);
+
+                            var options = new JsonSerializerOptions { WriteIndented = true };
+                            string diffJson = JsonSerializer.Serialize(result, options);
+                            File.WriteAllText(diffFilePath, diffJson);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Log error but continue processing
+                            Console.WriteLine($"⚠️  Error creating diff file for {baseName}: {ex.Message}");
+                        }
+                    }
                 }
 
                 report.FileResults.Add(result);
@@ -106,12 +141,20 @@ namespace BatchProcessor
                 using var referenceDoc = JsonDocument.Parse(referenceJson);
                 using var latestDoc = JsonDocument.Parse(latestJson);
 
-                // Extract ID from JSON (try common ID fields)
-                var idInfo = ExtractIdFromJson(referenceDoc.RootElement) ?? ExtractIdFromJson(latestDoc.RootElement);
-                if (idInfo.HasValue)
+                // Extract ID from JSON (try common ID fields) - wrap in try-catch to prevent exceptions
+                try
                 {
-                    result.Id = idInfo.Value.Value;
-                    result.IdKey = idInfo.Value.Key;
+                    var idInfo = ExtractIdFromJson(referenceDoc.RootElement) ?? ExtractIdFromJson(latestDoc.RootElement);
+                    if (idInfo.HasValue)
+                    {
+                        result.Id = idInfo.Value.Value;
+                        result.IdKey = idInfo.Value.Key;
+                    }
+                }
+                catch (Exception idEx)
+                {
+                    // Log but don't fail - ID extraction is optional
+                    Console.WriteLine($"⚠️  Warning: Could not extract ID from JSON: {idEx.Message}");
                 }
 
                 var differences = new List<PropertyDifference>();
@@ -122,11 +165,75 @@ namespace BatchProcessor
             }
             catch (Exception ex)
             {
+                // If an exception occurs, add it as a difference so it's visible
                 result.ErrorMessage = ex.Message;
                 result.FilesMatch = false;
+                
+                // Add a difference entry for the error so it's visible in the diff file
+                if (result.Differences == null)
+                {
+                    result.Differences = new List<PropertyDifference>();
+                }
+                result.Differences.Add(new PropertyDifference
+                {
+                    Path = "",
+                    Type = DifferenceType.TypeChanged,
+                    ReferenceValue = $"Error during comparison: {ex.Message}",
+                    LatestValue = null,
+                    ReferenceType = "error",
+                    LatestType = null
+                });
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Compare two JSON files and create a diff file in a subfolder if differences are found
+        /// </summary>
+        /// <param name="referencePath">Path to reference/baseline JSON file</param>
+        /// <param name="latestPath">Path to latest/current JSON file</param>
+        /// <param name="outputFolder">Output folder where diff subfolder will be created</param>
+        /// <param name="diffSubfolderName">Name of the subfolder for diff files (default: "diff")</param>
+        /// <returns>Path to the created diff file, or null if no differences found or error occurred</returns>
+        public string? CompareFilesAndCreateDiff(string referencePath, string latestPath, string outputFolder, string diffSubfolderName = "diff")
+        {
+            try
+            {
+                // Compare the files
+                var diffResult = CompareFiles(referencePath, latestPath);
+
+                // Only create diff file if differences are found
+                if (!diffResult.FilesMatch && diffResult.Differences != null && diffResult.Differences.Count > 0)
+                {
+                    // Create diff subfolder
+                    string diffSubfolder = Path.Combine(outputFolder, diffSubfolderName);
+                    if (!Directory.Exists(diffSubfolder))
+                    {
+                        Directory.CreateDirectory(diffSubfolder);
+                    }
+
+                    // Create diff file path in subfolder
+                    string baseFileName = Path.GetFileNameWithoutExtension(referencePath);
+                    string diffFileName = $"{baseFileName}_diff.json";
+                    string diffFilePath = Path.Combine(diffSubfolder, diffFileName);
+
+                    // Serialize diff result to JSON
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    string diffJson = JsonSerializer.Serialize(diffResult, options);
+                    File.WriteAllText(diffFilePath, diffJson);
+
+                    return diffFilePath;
+                }
+
+                return null; // No differences found
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't throw - return null to indicate failure
+                Console.WriteLine($"⚠️  Error creating diff file: {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>
@@ -135,6 +242,10 @@ namespace BatchProcessor
         /// </summary>
         private (string Key, string Value)? ExtractIdFromJson(JsonElement root)
         {
+            // Only process objects - skip strings, numbers, arrays, etc.
+            if (root.ValueKind != JsonValueKind.Object)
+                return null;
+
             // First, try common ID field names at root level
             string[] idFieldNames = { "id", "ID", "Id", "plotID", "plotId", "projectID", "projectId", "workitem_id", "workitemId" };
             
@@ -385,70 +496,104 @@ namespace BatchProcessor
         /// </summary>
         private void CompareJsonElements(JsonElement reference, JsonElement latest, string currentPath, List<PropertyDifference> differences, JsonElement? parentElement = null, JsonElement? arrayElement = null)
         {
-            // Handle different value kinds - this is a type change
-            if (reference.ValueKind != latest.ValueKind)
+            try
             {
-                // Try to extract entityID from array element first, then fall back to general ID extraction
-                var entityIdInfo = ExtractEntityIdFromPath(arrayElement, currentPath);
-                var generalIdInfo = ExtractIdFromJson(parentElement ?? reference) ?? ExtractIdFromJson(latest);
-                var idKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
-                var idValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
+                // Handle different value kinds - this is a type change
+                if (reference.ValueKind != latest.ValueKind)
+                {
+                    // Try to extract entityID from array element first, then fall back to general ID extraction
+                    string? idKey = null;
+                    string? idValue = null;
+                    try
+                    {
+                        var entityIdInfo = ExtractEntityIdFromPath(arrayElement, currentPath);
+                        var generalIdInfo = ExtractIdFromJson(parentElement ?? reference) ?? ExtractIdFromJson(latest);
+                        idKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
+                        idValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
+                    }
+                    catch
+                    {
+                        // Ignore ID extraction errors - they're optional
+                    }
 
+                    differences.Add(new PropertyDifference
+                    {
+                        Path = currentPath,
+                        Type = DifferenceType.TypeChanged,
+                        ReferenceValue = GetJsonValue(reference),
+                        LatestValue = GetJsonValue(latest),
+                        ReferenceType = GetJsonType(reference),
+                        LatestType = GetJsonType(latest),
+                        IdKey = idKey,
+                        IdValue = idValue
+                    });
+                    return;
+                }
+
+                switch (reference.ValueKind)
+                {
+                    case JsonValueKind.Object:
+                        CompareObjects(reference, latest, currentPath, differences, reference, arrayElement);
+                        break;
+
+                    case JsonValueKind.Array:
+                        CompareArrays(reference, latest, currentPath, differences);
+                        break;
+
+                    default:
+                        // Primitive values - check for type change within same ValueKind (e.g., float to int)
+                        if (!AreValuesEqual(reference, latest))
+                        {
+                            // Try to extract entityID from array element first, then fall back to general ID extraction
+                            string? idKey = null;
+                            string? idValue = null;
+                            try
+                            {
+                                var entityIdInfo = ExtractEntityIdFromPath(arrayElement, currentPath);
+                                var generalIdInfo = ExtractIdFromJson(parentElement ?? reference) ?? ExtractIdFromJson(latest);
+                                idKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
+                                idValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
+                            }
+                            catch
+                            {
+                                // Ignore ID extraction errors - they're optional
+                            }
+                            
+                            string refType = GetJsonType(reference);
+                            string latType = GetJsonType(latest);
+                            
+                            // Check if it's a type change (e.g., float to int, both are numbers)
+                            bool isTypeChange = refType != latType && 
+                                               (reference.ValueKind == JsonValueKind.Number || 
+                                                reference.ValueKind == JsonValueKind.String);
+                            
+                            differences.Add(new PropertyDifference
+                            {
+                                Path = currentPath,
+                                Type = isTypeChange ? DifferenceType.TypeChanged : DifferenceType.Modified,
+                                ReferenceValue = GetJsonValue(reference),
+                                LatestValue = GetJsonValue(latest),
+                                ReferenceType = refType,
+                                LatestType = latType,
+                                IdKey = idKey,
+                                IdValue = idValue
+                            });
+                        }
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                // If an exception occurs during comparison, add it as a difference
                 differences.Add(new PropertyDifference
                 {
                     Path = currentPath,
                     Type = DifferenceType.TypeChanged,
-                    ReferenceValue = GetJsonValue(reference),
-                    LatestValue = GetJsonValue(latest),
-                    ReferenceType = GetJsonType(reference),
-                    LatestType = GetJsonType(latest),
-                    IdKey = idKey,
-                    IdValue = idValue
+                    ReferenceValue = $"Error: {ex.Message}",
+                    LatestValue = null,
+                    ReferenceType = "error",
+                    LatestType = null
                 });
-                return;
-            }
-
-            switch (reference.ValueKind)
-            {
-                case JsonValueKind.Object:
-                    CompareObjects(reference, latest, currentPath, differences, reference, arrayElement);
-                    break;
-
-                case JsonValueKind.Array:
-                    CompareArrays(reference, latest, currentPath, differences);
-                    break;
-
-                default:
-                    // Primitive values - check for type change within same ValueKind (e.g., float to int)
-                    if (!AreValuesEqual(reference, latest))
-                    {
-                        // Try to extract entityID from array element first, then fall back to general ID extraction
-                        var entityIdInfo = ExtractEntityIdFromPath(arrayElement, currentPath);
-                        var generalIdInfo = ExtractIdFromJson(parentElement ?? reference) ?? ExtractIdFromJson(latest);
-                        var idKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
-                        var idValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
-                        
-                        string refType = GetJsonType(reference);
-                        string latType = GetJsonType(latest);
-                        
-                        // Check if it's a type change (e.g., float to int, both are numbers)
-                        bool isTypeChange = refType != latType && 
-                                           (reference.ValueKind == JsonValueKind.Number || 
-                                            reference.ValueKind == JsonValueKind.String);
-                        
-                        differences.Add(new PropertyDifference
-                        {
-                            Path = currentPath,
-                            Type = isTypeChange ? DifferenceType.TypeChanged : DifferenceType.Modified,
-                            ReferenceValue = GetJsonValue(reference),
-                            LatestValue = GetJsonValue(latest),
-                            ReferenceType = refType,
-                            LatestType = latType,
-                            IdKey = idKey,
-                            IdValue = idValue
-                        });
-                    }
-                    break;
             }
         }
 
@@ -457,14 +602,39 @@ namespace BatchProcessor
         /// </summary>
         private void CompareObjects(JsonElement reference, JsonElement latest, string currentPath, List<PropertyDifference> differences, JsonElement? parentElement = null, JsonElement? arrayElement = null)
         {
+            // Ensure both are objects before trying to enumerate
+            if (reference.ValueKind != JsonValueKind.Object || latest.ValueKind != JsonValueKind.Object)
+            {
+                // Type mismatch - add as difference
+                differences.Add(new PropertyDifference
+                {
+                    Path = currentPath,
+                    Type = DifferenceType.TypeChanged,
+                    ReferenceValue = GetJsonValue(reference),
+                    LatestValue = GetJsonValue(latest),
+                    ReferenceType = GetJsonType(reference),
+                    LatestType = GetJsonType(latest)
+                });
+                return;
+            }
+
             var referenceProps = reference.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
             var latestProps = latest.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
 
             // Try to extract entityID from array element first, then fall back to general ID extraction
-            var entityIdInfo = ExtractEntityIdFromPath(arrayElement, currentPath);
-            var generalIdInfo = ExtractIdFromJson(reference) ?? ExtractIdFromJson(latest);
-            var objectIdKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
-            var objectIdValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
+            string? objectIdKey = null;
+            string? objectIdValue = null;
+            try
+            {
+                var entityIdInfo = ExtractEntityIdFromPath(arrayElement, currentPath);
+                var generalIdInfo = ExtractIdFromJson(reference) ?? ExtractIdFromJson(latest);
+                objectIdKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
+                objectIdValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
+            }
+            catch
+            {
+                // Ignore ID extraction errors - they're optional
+            }
 
             // Find properties in reference but not in latest (removed)
             foreach (var refProp in referenceProps)
@@ -496,9 +666,18 @@ namespace BatchProcessor
                 {
                     string propPath = string.IsNullOrEmpty(currentPath) ? latProp.Key : $"{currentPath}.{latProp.Key}";
                     // For nested properties in array elements, try to extract entityID from the array element
-                    var propEntityIdInfo = ExtractEntityIdFromPath(arrayElement, propPath);
-                    var propIdKey = propEntityIdInfo.EntityIdKey ?? objectIdKey;
-                    var propIdValue = propEntityIdInfo.EntityIdValue ?? objectIdValue;
+                    string? propIdKey = objectIdKey;
+                    string? propIdValue = objectIdValue;
+                    try
+                    {
+                        var propEntityIdInfo = ExtractEntityIdFromPath(arrayElement, propPath);
+                        propIdKey = propEntityIdInfo.EntityIdKey ?? objectIdKey;
+                        propIdValue = propEntityIdInfo.EntityIdValue ?? objectIdValue;
+                    }
+                    catch
+                    {
+                        // Ignore ID extraction errors - use parent IDs
+                    }
 
                     differences.Add(new PropertyDifference
                     {

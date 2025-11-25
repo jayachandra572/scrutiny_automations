@@ -265,71 +265,7 @@ namespace BatchProcessor
 
                 foreach (var result in filesWithDifferences)
                 {
-                    var fileNode = new TreeViewItem
-                    {
-                        Header = new TextBlock
-                        {
-                            Text = result.FileName,
-                            FontWeight = FontWeights.SemiBold
-                        }
-                    };
-
-                    foreach (var diff in result.Differences)
-                    {
-                        string diffText = diff.Type switch
-                        {
-                            DifferenceType.Modified => $"MODIFIED: {diff.Path}",
-                            DifferenceType.Added => $"ADDED: {diff.Path}",
-                            DifferenceType.Removed => $"REMOVED: {diff.Path}",
-                            _ => diff.Path
-                        };
-
-                        var diffNodeItem = new TreeViewItem
-                        {
-                            Header = new TextBlock
-                            {
-                                Text = diffText,
-                                Foreground = diff.Type switch
-                                {
-                                    DifferenceType.Modified => new SolidColorBrush(Colors.Orange),
-                                    DifferenceType.Added => new SolidColorBrush(Colors.Green),
-                                    DifferenceType.Removed => new SolidColorBrush(Colors.Red),
-                                    _ => new SolidColorBrush(Colors.Black)
-                                }
-                            }
-                        };
-
-                        // Add value details
-                        if (diff.Type == DifferenceType.Modified)
-                        {
-                            diffNodeItem.Items.Add(new TreeViewItem
-                            {
-                                Header = $"Reference: {FormatValue(diff.ReferenceValue)}"
-                            });
-                            diffNodeItem.Items.Add(new TreeViewItem
-                            {
-                                Header = $"Latest:    {FormatValue(diff.LatestValue)}"
-                            });
-                        }
-                        else if (diff.Type == DifferenceType.Added)
-                        {
-                            diffNodeItem.Items.Add(new TreeViewItem
-                            {
-                                Header = $"Value: {FormatValue(diff.LatestValue)}"
-                            });
-                        }
-                        else if (diff.Type == DifferenceType.Removed)
-                        {
-                            diffNodeItem.Items.Add(new TreeViewItem
-                            {
-                                Header = $"Value: {FormatValue(diff.ReferenceValue)}"
-                            });
-                        }
-
-                        fileNode.Items.Add(diffNodeItem);
-                    }
-
-                    diffNode.Items.Add(fileNode);
+                    diffNode.Items.Add(new TreeViewItem { Header = result.FileName });
                 }
 
                 TreeViewResults.Items.Add(diffNode);
@@ -402,19 +338,14 @@ namespace BatchProcessor
 
                 if (!string.IsNullOrEmpty(savedPath))
                 {
-                    string jsonFile = Path.GetFileName(savedPath);
-                    
-                    // Extract timestamp from filename to construct subfolder name
-                    string timestamp = jsonFile.Replace("diff_report_", "").Replace(".json", "");
-                    string diffLogsSubfolder = $"diff_logs_{timestamp}";
+                    string subfolderName = Path.GetFileName(savedPath);
 
                     // We're already on UI thread when called from Dispatcher.Invoke
                     PanelSavedFiles.Visibility = Visibility.Visible;
-                    TxtSavedFiles.Text = $"All files saved in:\n  {diffLogsSubfolder}/\n\n  Summary: {jsonFile}\n  Individual file logs: *.json";
+                    TxtSavedFiles.Text = $"Individual diff files saved in:\n  {subfolderName}/\n\n  Files: *.json";
 
-                    LogMessage($"\n✅ Diff report saved:");
-                    LogMessage($"   Location: {diffLogsSubfolder}/");
-                    LogMessage($"   Summary: {jsonFile}");
+                    LogMessage($"\n✅ Diff files saved:");
+                    LogMessage($"   Location: {subfolderName}/");
                     LogMessage($"   Individual file logs: *.json");
                 }
                 else

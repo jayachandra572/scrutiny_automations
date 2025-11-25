@@ -10,9 +10,9 @@ namespace BatchProcessor
     public class DiffReportExporter
     {
         /// <summary>
-        /// Save diff report to output folder (JSON and Text formats)
+        /// Save individual diff files to output folder
         /// Creates a subfolder for individual file diff logs
-        /// Returns the path to the saved JSON file
+        /// Returns the path to the subfolder containing the diff files
         /// </summary>
         public string SaveDiffReport(DiffReport report, string outputFolder, bool saveOnlyIfDifferent = true)
         {
@@ -34,20 +34,16 @@ namespace BatchProcessor
             }
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string baseFileName = $"diff_report_{timestamp}";
 
-            // Create subfolder for all diff files (summary and individual file logs)
+            // Create subfolder for individual file diff logs
             string diffLogsSubfolder = Path.Combine(outputFolder, $"diff_logs_{timestamp}");
             Directory.CreateDirectory(diffLogsSubfolder);
 
             // Save individual file diff logs in subfolder (JSON format only)
             SaveIndividualFileDiffLogs(report, diffLogsSubfolder);
 
-            // Save main summary report in subfolder (JSON format only)
-            string jsonPath = Path.Combine(diffLogsSubfolder, $"{baseFileName}.json");
-            ExportToJson(report, jsonPath);
-
-            return jsonPath;
+            // Return the subfolder path instead of a summary file path
+            return diffLogsSubfolder;
         }
 
         /// <summary>
