@@ -473,23 +473,41 @@ namespace BatchProcessor
                             WpfMessageBoxImage.Warning);
                     }
 
+                    // Re-enable the button immediately after processing completes
+                    BtnRun.IsEnabled = true;
+
                     // Display failed files and non-processed files
                     DisplayFailedFiles(summary.FailedFiles);
                     DisplayNonProcessedFiles(summary.NonProcessedFiles, summary.NonProcessedFilesWithErrors);
 
+                    // Determine if this is a report generation command
+                    bool isReportGenerationCommand = (command.Contains("GenerateScrutinyReportBatch", StringComparison.OrdinalIgnoreCase) ||
+                                                      (command.Contains("Generate", StringComparison.OrdinalIgnoreCase) && 
+                                                       command.Contains("Report", StringComparison.OrdinalIgnoreCase)));
+                    
                     int totalIssues = summary.FailedFiles.Count + summary.NonProcessedFiles.Count;
                     if (totalIssues == 0)
                     {
-                        TxtStatus.Text = "Processing complete! All files processed successfully.";
+                        TxtStatus.Text = "✅ Processing complete! All files processed successfully.";
                         LogMessage("\n✅ All processing complete!");
                         WpfMessageBox.Show("Batch processing completed successfully!", "Success", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
                     }
                     else
                     {
-                        TxtStatus.Text = $"Processing complete! {summary.FailedFiles.Count} validation failure(s), {summary.NonProcessedFiles.Count} non-processed file(s).";
-                        LogMessage($"\n⚠️ Processing complete with {summary.FailedFiles.Count} validation failure(s) and {summary.NonProcessedFiles.Count} non-processed file(s).");
-                        WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} validation failure(s) (JSON created)\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.", 
-                            "Completed with Issues", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                        if (isReportGenerationCommand)
+                        {
+                            TxtStatus.Text = $"⚠️ Processing complete! {summary.FailedFiles.Count} file(s) failed (no output created), {summary.NonProcessedFiles.Count} non-processed file(s).";
+                            LogMessage($"\n⚠️ Processing complete with {summary.FailedFiles.Count} file(s) that did not generate output and {summary.NonProcessedFiles.Count} non-processed file(s).");
+                            WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} file(s) failed to generate output\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.", 
+                                "Completed with Issues", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                        }
+                        else
+                        {
+                            TxtStatus.Text = $"⚠️ Processing complete! {summary.FailedFiles.Count} validation failure(s), {summary.NonProcessedFiles.Count} non-processed file(s).";
+                            LogMessage($"\n⚠️ Processing complete with {summary.FailedFiles.Count} validation failure(s) and {summary.NonProcessedFiles.Count} non-processed file(s).");
+                            WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} validation failure(s) (JSON created)\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.", 
+                                "Completed with Issues", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                        }
                     }
                 }
                 finally
@@ -501,13 +519,22 @@ namespace BatchProcessor
             }
             catch (Exception ex)
             {
+                // Re-enable button immediately on error
+                BtnRun.IsEnabled = true;
                 TxtStatus.Text = "Error occurred";
                 LogMessage($"\n❌ Error: {ex.Message}");
                 WpfMessageBox.Show($"Error during processing:\n{ex.Message}", "Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
             }
             finally
             {
-                BtnRun.IsEnabled = true;
+                // Ensure button is re-enabled (safety net in case of any edge cases)
+                if (!BtnRun.IsEnabled)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        BtnRun.IsEnabled = true;
+                    });
+                }
             }
         }
 

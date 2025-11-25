@@ -468,15 +468,68 @@ namespace BatchProcessor
                 // Mark as processed (AutoCAD process was started)
                 result.WasProcessed = true;
                 
-                // Check if output JSON was created (only created for failed files)
-                string expectedJsonPath = Path.Combine(outputFolder, $"{result.DrawingName}.json");
-                bool jsonCreated = File.Exists(expectedJsonPath);
+                // Determine success based on command type
+                bool isReportGenerationCommand = (_mainCommand.Contains("GenerateScrutinyReportBatch", StringComparison.OrdinalIgnoreCase) ||
+                                                  (_mainCommand.Contains("Generate", StringComparison.OrdinalIgnoreCase) && 
+                                                   _mainCommand.Contains("Report", StringComparison.OrdinalIgnoreCase)));
                 
-                // Success logic: No JSON file = all validations passed (success)
-                // Failure logic: JSON file exists = validations failed
-                // Note: We only mark as "failed" if JSON exists, regardless of exit code
-                // This ensures failed files list matches the JSON files created
-                result.Success = !jsonCreated;
+                if (isReportGenerationCommand)
+                {
+                    // For report generation commands: File MUST exist for success
+                    // Check for any output file starting with drawing name (could be PDF, DOCX, etc.)
+                    string[] possibleExtensions = { ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".json", ".txt" };
+                    bool outputFileExists = false;
+                    string foundOutputFile = null;
+                    
+                    foreach (string ext in possibleExtensions)
+                    {
+                        string expectedFilePath = Path.Combine(outputFolder, $"{result.DrawingName}{ext}");
+                        if (File.Exists(expectedFilePath))
+                        {
+                            outputFileExists = true;
+                            foundOutputFile = expectedFilePath;
+                            break;
+                        }
+                    }
+                    
+                    // Also check for any file starting with drawing name (in case of different naming)
+                    if (!outputFileExists)
+                    {
+                        try
+                        {
+                            var files = Directory.GetFiles(outputFolder, $"{result.DrawingName}*");
+                            if (files.Length > 0)
+                            {
+                                outputFileExists = true;
+                                foundOutputFile = files[0];
+                            }
+                        }
+                        catch { /* Ignore directory access errors */ }
+                    }
+                    
+                    result.Success = outputFileExists;
+                    
+                    if (outputFileExists && foundOutputFile != null)
+                    {
+                        Console.WriteLine($"  ✅ Output file created: {Path.GetFileName(foundOutputFile)}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"  ❌ No output file created for {result.DrawingName}");
+                        result.ErrorMessage = "Output file was not created - report generation may have failed";
+                    }
+                }
+                else
+                {
+                    // For validation commands: JSON file exists = validation failed
+                    // Success = no JSON file (all validations passed)
+                    string expectedJsonPath = Path.Combine(outputFolder, $"{result.DrawingName}.json");
+                    bool jsonCreated = File.Exists(expectedJsonPath);
+                    
+                    // Success logic: No JSON file = all validations passed (success)
+                    // Failure logic: JSON file exists = validations failed
+                    result.Success = !jsonCreated;
+                }
 
                 // Clean up temp script and parameter files
                 try { File.Delete(tempScriptPath); } catch { }
@@ -498,15 +551,38 @@ namespace BatchProcessor
                 Console.WriteLine($"{new string('─', 80)}");
                 if (result.Success)
                 {
-                    // Success: No JSON file created (all validations passed)
-                    Console.WriteLine($"  ✅ SUCCESS: {result.DrawingName}");
-                    Console.WriteLine($"     Duration: {result.Duration.TotalSeconds:F1}s | All validations passed");
+                    if (isReportGenerationCommand)
+                    {
+                        // Success: Output file created (report generated)
+                        Console.WriteLine($"  ✅ PROCESSING COMPLETE: {result.DrawingName}");
+                        Console.WriteLine($"     Duration: {result.Duration.TotalSeconds:F1}s | Report file created successfully");
+                    }
+                    else
+                    {
+                        // Success: No JSON file created (all validations passed)
+                        Console.WriteLine($"  ✅ SUCCESS: {result.DrawingName}");
+                        Console.WriteLine($"     Duration: {result.Duration.TotalSeconds:F1}s | All validations passed");
+                    }
                 }
                 else
                 {
-                    // Failed: JSON file exists (validations failed)
-                    Console.WriteLine($"  ❌ FAILED: {result.DrawingName}");
-                    Console.WriteLine($"     Duration: {result.Duration.TotalSeconds:F1}s | Failures detected (JSON created)");
+                    if (isReportGenerationCommand)
+                    {
+                        // Failed: Output file not created (report generation failed)
+                        Console.WriteLine($"  ❌ FAILED: {result.DrawingName}");
+                        Console.WriteLine($"     Duration: {result.Duration.TotalSeconds:F1}s | Output file was not created");
+                        
+                        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                        {
+                            Console.WriteLine($"     Error: {result.ErrorMessage}");
+                        }
+                    }
+                    else
+                    {
+                        // Failed: JSON file exists (validations failed)
+                        Console.WriteLine($"  ❌ FAILED: {result.DrawingName}");
+                        Console.WriteLine($"     Duration: {result.Duration.TotalSeconds:F1}s | Failures detected (JSON created)");
+                    }
                     
                     // Log exit code for debugging if non-zero
                     if (process.ExitCode != 0)
