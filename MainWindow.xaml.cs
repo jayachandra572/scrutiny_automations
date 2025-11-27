@@ -1416,6 +1416,10 @@ namespace BatchProcessor
                         newWindow = new JsonDiffWindow();
                         break;
 
+                    case ModeSelectionWindow.SelectedMode.RelationsCreation:
+                        newWindow = new RelationsWindow();
+                        break;
+
                     case ModeSelectionWindow.SelectedMode.CommandsExecution:
                     default:
                         newWindow = new MainWindow();

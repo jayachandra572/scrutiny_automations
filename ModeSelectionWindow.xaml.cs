@@ -7,7 +7,8 @@ namespace BatchProcessor
         public enum SelectedMode
         {
             CommandsExecution,
-            JsonDiffComparison
+            JsonDiffComparison,
+            RelationsCreation
         }
 
         public SelectedMode Mode { get; private set; }
@@ -37,6 +38,16 @@ namespace BatchProcessor
         private void Border_DiffMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             SelectMode(SelectedMode.JsonDiffComparison);
+        }
+
+        private void BtnRelationsMode_Click(object sender, RoutedEventArgs e)
+        {
+            SelectMode(SelectedMode.RelationsCreation);
+        }
+
+        private void Border_RelationsMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            SelectMode(SelectedMode.RelationsCreation);
         }
 
         private void SelectMode(SelectedMode mode)

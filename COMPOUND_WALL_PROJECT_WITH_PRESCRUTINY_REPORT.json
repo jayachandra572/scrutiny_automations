@@ -100,7 +100,8 @@
           "side1Setback": 0.0,
           "side2Setback": 0.0
         },
-        "accessoryToProposedWorkDistances": []
+        "accessoryToProposedWorkDistances": [],
+        "DeductibleAreaDetails": []
       }
     ],
     "splays": [],
