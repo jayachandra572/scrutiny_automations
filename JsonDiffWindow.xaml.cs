@@ -146,10 +146,14 @@ namespace BatchProcessor
                             }
                         });
 
+                        // Load ignored keys from settings
+                        var ignoredKeys = LoadIgnoredKeys();
+
                         report = _comparer!.CompareFolders(
                             referenceFolder,
                             latestFolder,
-                            outputFolder
+                            outputFolder,
+                            ignoredKeys: ignoredKeys
                         );
                     }
                     catch (Exception ex)
@@ -425,11 +429,28 @@ namespace BatchProcessor
         {
             try
             {
-                var settings = new
+                // Load existing settings to preserve IgnoredKeys
+                List<string>? existingIgnoredKeys = null;
+                if (File.Exists(UserSettingsFile))
+                {
+                    try
+                    {
+                        var existingJson = File.ReadAllText(UserSettingsFile);
+                        var existingSettings = System.Text.Json.JsonSerializer.Deserialize<DiffUserSettings>(existingJson);
+                        existingIgnoredKeys = existingSettings?.IgnoredKeys;
+                    }
+                    catch
+                    {
+                        // If we can't read existing settings, continue with null
+                    }
+                }
+
+                var settings = new DiffUserSettings
                 {
                     ReferenceFolder = TxtReferenceFolder.Text,
                     LatestFolder = TxtLatestFolder.Text,
-                    OutputFolder = TxtOutputFolder.Text
+                    OutputFolder = TxtOutputFolder.Text,
+                    IgnoredKeys = existingIgnoredKeys ?? new List<string>()
                 };
 
                 var json = System.Text.Json.JsonSerializer.Serialize(settings, 
@@ -465,11 +486,35 @@ namespace BatchProcessor
             }
         }
 
+        private List<string> LoadIgnoredKeys()
+        {
+            try
+            {
+                if (File.Exists(UserSettingsFile))
+                {
+                    var json = File.ReadAllText(UserSettingsFile);
+                    var settings = System.Text.Json.JsonSerializer.Deserialize<DiffUserSettings>(json);
+
+                    if (settings?.IgnoredKeys != null && settings.IgnoredKeys.Count > 0)
+                    {
+                        return settings.IgnoredKeys;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Could not load ignored keys: {ex.Message}");
+            }
+
+            return new List<string>();
+        }
+
         private class DiffUserSettings
         {
             public string? ReferenceFolder { get; set; }
             public string? LatestFolder { get; set; }
             public string? OutputFolder { get; set; }
+            public List<string>? IgnoredKeys { get; set; }
         }
 
         #endregion

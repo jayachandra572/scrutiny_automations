@@ -18,7 +18,8 @@ namespace BatchProcessor
         /// <param name="outputFolder">Optional output folder for diff files (if null, diff files won't be created)</param>
         /// <param name="createDiffFiles">If true, creates diff JSON files in a subfolder when differences are found</param>
         /// <param name="diffSubfolderName">Name of the subfolder for diff files (default: "diff")</param>
-        public DiffReport CompareFolders(string referenceFolder, string latestFolder, string? outputFolder = null, bool createDiffFiles = false, string diffSubfolderName = "diff")
+        /// <param name="ignoredKeys">List of JSON paths to ignore during comparison (e.g., "timestamp", "plotData.timestamp", "AbuttingRoad[].timestamp")</param>
+        public DiffReport CompareFolders(string referenceFolder, string latestFolder, string? outputFolder = null, bool createDiffFiles = false, string diffSubfolderName = "diff", List<string>? ignoredKeys = null)
         {
             var report = new DiffReport
             {
@@ -85,7 +86,7 @@ namespace BatchProcessor
                 else
                 {
                     // Both files exist, compare them
-                    result = CompareFiles(referencePath!, latestPath!);
+                    result = CompareFiles(referencePath!, latestPath!, ignoredKeys);
 
                     // Create diff file if differences found and output folder is specified
                     if (createDiffFiles && !result.FilesMatch && result.Differences != null && result.Differences.Count > 0 && diffSubfolder != null)
@@ -126,7 +127,10 @@ namespace BatchProcessor
         /// <summary>
         /// Compare two JSON files
         /// </summary>
-        public JsonDiffResult CompareFiles(string referencePath, string latestPath)
+        /// <param name="referencePath">Path to reference JSON file</param>
+        /// <param name="latestPath">Path to latest JSON file</param>
+        /// <param name="ignoredKeys">List of JSON paths to ignore during comparison</param>
+        public JsonDiffResult CompareFiles(string referencePath, string latestPath, List<string>? ignoredKeys = null)
         {
             var result = new JsonDiffResult
             {
@@ -158,7 +162,7 @@ namespace BatchProcessor
                 }
 
                 var differences = new List<PropertyDifference>();
-                CompareJsonElements(referenceDoc.RootElement, latestDoc.RootElement, "", differences, null);
+                CompareJsonElements(referenceDoc.RootElement, latestDoc.RootElement, "", differences, null, null, ignoredKeys);
 
                 result.Differences = differences;
                 result.FilesMatch = differences.Count == 0;
@@ -195,13 +199,14 @@ namespace BatchProcessor
         /// <param name="latestPath">Path to latest/current JSON file</param>
         /// <param name="outputFolder">Output folder where diff subfolder will be created</param>
         /// <param name="diffSubfolderName">Name of the subfolder for diff files (default: "diff")</param>
+        /// <param name="ignoredKeys">List of JSON paths to ignore during comparison</param>
         /// <returns>Path to the created diff file, or null if no differences found or error occurred</returns>
-        public string? CompareFilesAndCreateDiff(string referencePath, string latestPath, string outputFolder, string diffSubfolderName = "diff")
+        public string? CompareFilesAndCreateDiff(string referencePath, string latestPath, string outputFolder, string diffSubfolderName = "diff", List<string>? ignoredKeys = null)
         {
             try
             {
                 // Compare the files
-                var diffResult = CompareFiles(referencePath, latestPath);
+                var diffResult = CompareFiles(referencePath, latestPath, ignoredKeys);
 
                 // Only create diff file if differences are found
                 if (!diffResult.FilesMatch && diffResult.Differences != null && diffResult.Differences.Count > 0)
@@ -494,10 +499,16 @@ namespace BatchProcessor
         /// <summary>
         /// Recursively compare JSON elements
         /// </summary>
-        private void CompareJsonElements(JsonElement reference, JsonElement latest, string currentPath, List<PropertyDifference> differences, JsonElement? parentElement = null, JsonElement? arrayElement = null)
+        private void CompareJsonElements(JsonElement reference, JsonElement latest, string currentPath, List<PropertyDifference> differences, JsonElement? parentElement = null, JsonElement? arrayElement = null, List<string>? ignoredKeys = null)
         {
             try
             {
+                // Check if this path should be ignored
+                if (IsPathIgnored(currentPath, ignoredKeys))
+                {
+                    return;
+                }
+
                 // Handle different value kinds - this is a type change
                 if (reference.ValueKind != latest.ValueKind)
                 {
@@ -533,11 +544,11 @@ namespace BatchProcessor
                 switch (reference.ValueKind)
                 {
                     case JsonValueKind.Object:
-                        CompareObjects(reference, latest, currentPath, differences, reference, arrayElement);
+                        CompareObjects(reference, latest, currentPath, differences, reference, arrayElement, ignoredKeys);
                         break;
 
                     case JsonValueKind.Array:
-                        CompareArrays(reference, latest, currentPath, differences);
+                        CompareArrays(reference, latest, currentPath, differences, ignoredKeys);
                         break;
 
                     default:
@@ -600,7 +611,7 @@ namespace BatchProcessor
         /// <summary>
         /// Compare JSON objects
         /// </summary>
-        private void CompareObjects(JsonElement reference, JsonElement latest, string currentPath, List<PropertyDifference> differences, JsonElement? parentElement = null, JsonElement? arrayElement = null)
+        private void CompareObjects(JsonElement reference, JsonElement latest, string currentPath, List<PropertyDifference> differences, JsonElement? parentElement = null, JsonElement? arrayElement = null, List<string>? ignoredKeys = null)
         {
             // Ensure both are objects before trying to enumerate
             if (reference.ValueKind != JsonValueKind.Object || latest.ValueKind != JsonValueKind.Object)
@@ -642,6 +653,13 @@ namespace BatchProcessor
                 if (!latestProps.ContainsKey(refProp.Key))
                 {
                     string propPath = string.IsNullOrEmpty(currentPath) ? refProp.Key : $"{currentPath}.{refProp.Key}";
+                    
+                    // Skip if this path should be ignored
+                    if (IsPathIgnored(propPath, ignoredKeys))
+                    {
+                        continue;
+                    }
+                    
                     // For nested properties in array elements, try to extract entityID from the array element
                     var propEntityIdInfo = ExtractEntityIdFromPath(arrayElement, propPath);
                     var propIdKey = propEntityIdInfo.EntityIdKey ?? objectIdKey;
@@ -665,6 +683,13 @@ namespace BatchProcessor
                 if (!referenceProps.ContainsKey(latProp.Key))
                 {
                     string propPath = string.IsNullOrEmpty(currentPath) ? latProp.Key : $"{currentPath}.{latProp.Key}";
+                    
+                    // Skip if this path should be ignored
+                    if (IsPathIgnored(propPath, ignoredKeys))
+                    {
+                        continue;
+                    }
+                    
                     // For nested properties in array elements, try to extract entityID from the array element
                     string? propIdKey = objectIdKey;
                     string? propIdValue = objectIdValue;
@@ -698,7 +723,7 @@ namespace BatchProcessor
                 if (latestProps.TryGetValue(refProp.Key, out JsonElement latValue))
                 {
                     string newPath = string.IsNullOrEmpty(currentPath) ? refProp.Key : $"{currentPath}.{refProp.Key}";
-                    CompareJsonElements(refProp.Value, latValue, newPath, differences, reference, arrayElement);
+                    CompareJsonElements(refProp.Value, latValue, newPath, differences, reference, arrayElement, ignoredKeys);
                 }
             }
         }
@@ -706,7 +731,7 @@ namespace BatchProcessor
         /// <summary>
         /// Compare JSON arrays
         /// </summary>
-        private void CompareArrays(JsonElement reference, JsonElement latest, string currentPath, List<PropertyDifference> differences)
+        private void CompareArrays(JsonElement reference, JsonElement latest, string currentPath, List<PropertyDifference> differences, List<string>? ignoredKeys = null)
         {
             var refArray = reference.EnumerateArray().ToList();
             var latArray = latest.EnumerateArray().ToList();
@@ -719,47 +744,55 @@ namespace BatchProcessor
 
                 if (i >= refArray.Count)
                 {
-                    // Added element - try to extract entityID from array element first
-                    var entityIdInfo = ExtractEntityIdFromPath(latArray[i], arrayPath);
-                    var generalIdInfo = ExtractIdFromJson(latArray[i]);
-                    var idKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
-                    var idValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
-
-                    differences.Add(new PropertyDifference
+                    // Added element - check if entire array path should be ignored
+                    if (!IsPathIgnored(arrayPath, ignoredKeys))
                     {
-                        Path = arrayPath,
-                        Type = DifferenceType.Added,
-                        ReferenceValue = null,
-                        LatestValue = GetJsonValue(latArray[i]),
-                        IdKey = idKey,
-                        IdValue = idValue,
-                        IsArrayItemAdded = true
-                    });
+                        // Try to extract entityID from array element first
+                        var entityIdInfo = ExtractEntityIdFromPath(latArray[i], arrayPath);
+                        var generalIdInfo = ExtractIdFromJson(latArray[i]);
+                        var idKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
+                        var idValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
+
+                        differences.Add(new PropertyDifference
+                        {
+                            Path = arrayPath,
+                            Type = DifferenceType.Added,
+                            ReferenceValue = null,
+                            LatestValue = GetJsonValue(latArray[i]),
+                            IdKey = idKey,
+                            IdValue = idValue,
+                            IsArrayItemAdded = true
+                        });
+                    }
                 }
                 else if (i >= latArray.Count)
                 {
-                    // Removed element - try to extract entityID from array element first
-                    var entityIdInfo = ExtractEntityIdFromPath(refArray[i], arrayPath);
-                    var generalIdInfo = ExtractIdFromJson(refArray[i]);
-                    var idKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
-                    var idValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
-
-                    differences.Add(new PropertyDifference
+                    // Removed element - check if entire array path should be ignored
+                    if (!IsPathIgnored(arrayPath, ignoredKeys))
                     {
-                        Path = arrayPath,
-                        Type = DifferenceType.Removed,
-                        ReferenceValue = GetJsonValue(refArray[i]),
-                        LatestValue = null,
-                        IdKey = idKey,
-                        IdValue = idValue,
-                        IsArrayItemRemoved = true
-                    });
+                        // Try to extract entityID from array element first
+                        var entityIdInfo = ExtractEntityIdFromPath(refArray[i], arrayPath);
+                        var generalIdInfo = ExtractIdFromJson(refArray[i]);
+                        var idKey = entityIdInfo.EntityIdKey ?? generalIdInfo?.Key;
+                        var idValue = entityIdInfo.EntityIdValue ?? generalIdInfo?.Value;
+
+                        differences.Add(new PropertyDifference
+                        {
+                            Path = arrayPath,
+                            Type = DifferenceType.Removed,
+                            ReferenceValue = GetJsonValue(refArray[i]),
+                            LatestValue = null,
+                            IdKey = idKey,
+                            IdValue = idValue,
+                            IsArrayItemRemoved = true
+                        });
+                    }
                 }
                 else
                 {
                     // Compare elements at same index - pass the array element as parent for nested properties
                     // Also pass the array element itself so we can extract entityID from it
-                    CompareJsonElements(refArray[i], latArray[i], arrayPath, differences, refArray[i], refArray[i]);
+                    CompareJsonElements(refArray[i], latArray[i], arrayPath, differences, refArray[i], refArray[i], ignoredKeys);
                 }
             }
         }
@@ -876,6 +909,75 @@ namespace BatchProcessor
             }
             
             return fileName;
+        }
+
+        /// <summary>
+        /// Check if a JSON path should be ignored based on the ignored keys configuration
+        /// 
+        /// Supports three matching patterns:
+        /// 1. Key name only (e.g., "AccessoryDeductibleArea") - matches the key anywhere in the JSON structure
+        ///    Examples: "AccessoryDeductibleArea", "Accessory[0].AccessoryDeductibleArea", "Accessory[2].AccessoryDeductibleArea", "plotData.AccessoryDeductibleArea"
+        /// 
+        /// 2. Wildcard array pattern (e.g., "Accessory[].AccessoryDeductibleArea") - matches the key only within the specified array
+        ///    Examples: "Accessory[0].AccessoryDeductibleArea", "Accessory[1].AccessoryDeductibleArea", "Accessory[2].AccessoryDeductibleArea"
+        ///    Does NOT match: "AccessoryDeductibleArea" (root level), "plotData.AccessoryDeductibleArea"
+        /// 
+        /// 3. Full path (e.g., "Accessory[2].AccessoryDeductibleArea") - matches only that exact path
+        ///    Example: Only "Accessory[2].AccessoryDeductibleArea"
+        /// </summary>
+        /// <param name="path">The JSON path to check (e.g., "plotData.timestamp", "Accessory[0].AccessoryDeductibleArea")</param>
+        /// <param name="ignoredKeys">List of paths to ignore</param>
+        /// <returns>True if the path should be ignored, false otherwise</returns>
+        private bool IsPathIgnored(string path, List<string>? ignoredKeys)
+        {
+            if (ignoredKeys == null || ignoredKeys.Count == 0 || string.IsNullOrEmpty(path))
+            {
+                return false;
+            }
+
+            foreach (var ignoredKey in ignoredKeys)
+            {
+                if (string.IsNullOrEmpty(ignoredKey))
+                {
+                    continue;
+                }
+
+                // 1. Exact match (handles full paths like "Accessory[2].AccessoryDeductibleArea")
+                if (path.Equals(ignoredKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                // 2. Handle wildcard array patterns: "ArrayName[].property" matches "ArrayName[0].property", "ArrayName[1].property", etc.
+                if (ignoredKey.Contains("[]"))
+                {
+                    // Replace "[]" with a regex pattern that matches any array index
+                    string pattern = Regex.Escape(ignoredKey).Replace(@"\[\]", @"\[\d+\]");
+                    if (Regex.IsMatch(path, "^" + pattern + "$", RegexOptions.IgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                // 3. Key name only - check if path ends with the ignored key (matches anywhere in structure)
+                // e.g., "AccessoryDeductibleArea" matches "AccessoryDeductibleArea", "Accessory[0].AccessoryDeductibleArea", etc.
+                int index = path.LastIndexOf(ignoredKey, StringComparison.OrdinalIgnoreCase);
+                if (index >= 0)
+                {
+                    // Check if it's at the start or preceded by a dot or bracket
+                    bool isValidStart = index == 0 || path[index - 1] == '.' || path[index - 1] == '[';
+                    // Check if it's at the end or followed by a dot or bracket
+                    int endIndex = index + ignoredKey.Length;
+                    bool isValidEnd = endIndex >= path.Length || path[endIndex] == '.' || path[endIndex] == '[' || path[endIndex] == ']';
+                    
+                    if (isValidStart && isValidEnd)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
     }
 }
