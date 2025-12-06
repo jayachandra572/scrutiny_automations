@@ -5,6 +5,9 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using BatchProcessor.Models;
+// using JsonDiffPatch; // Temporarily disabled - package reference issue
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace BatchProcessor
 {
@@ -96,8 +99,8 @@ namespace BatchProcessor
                             string diffFileName = $"{baseName}_diff.json";
                             string diffFilePath = Path.Combine(diffSubfolder, diffFileName);
 
-                            var options = new JsonSerializerOptions { WriteIndented = true };
-                            string diffJson = JsonSerializer.Serialize(result, options);
+                            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                            string diffJson = System.Text.Json.JsonSerializer.Serialize(result, options);
                             File.WriteAllText(diffFilePath, diffJson);
                         }
                         catch (Exception ex)
@@ -125,7 +128,7 @@ namespace BatchProcessor
         }
 
         /// <summary>
-        /// Compare two JSON files
+        /// Compare two JSON files using JsonDiffPatch.NET
         /// </summary>
         /// <param name="referencePath">Path to reference JSON file</param>
         /// <param name="latestPath">Path to latest JSON file</param>
@@ -142,6 +145,7 @@ namespace BatchProcessor
                 string referenceJson = File.ReadAllText(referencePath);
                 string latestJson = File.ReadAllText(latestPath);
 
+                // Parse JSON using System.Text.Json for ID extraction
                 using var referenceDoc = JsonDocument.Parse(referenceJson);
                 using var latestDoc = JsonDocument.Parse(latestJson);
 
@@ -161,8 +165,8 @@ namespace BatchProcessor
                     Console.WriteLine($"⚠️  Warning: Could not extract ID from JSON: {idEx.Message}");
                 }
 
-                var differences = new List<PropertyDifference>();
-                CompareJsonElements(referenceDoc.RootElement, latestDoc.RootElement, "", differences, null, null, ignoredKeys);
+                // Use JsonDiffPatch.NET for core comparison
+                var differences = CompareUsingJsonDiffPatch(referenceJson, latestJson, referenceDoc, latestDoc, ignoredKeys);
 
                 result.Differences = differences;
                 result.FilesMatch = differences.Count == 0;
@@ -190,6 +194,373 @@ namespace BatchProcessor
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Compare two JSON strings using JsonDiffPatch.NET and convert to PropertyDifference list
+        /// </summary>
+        private List<PropertyDifference> CompareUsingJsonDiffPatch(string referenceJson, string latestJson, JsonDocument referenceDoc, JsonDocument latestDoc, List<string>? ignoredKeys)
+        {
+            var differences = new List<PropertyDifference>();
+            
+            // JsonDiffPatch temporarily disabled due to package reference issue
+            // Using fallback manual comparison instead
+            // TODO: Fix JsonDiffPatch.Net package reference
+            /*
+            var jdp = new JsonDiffPatch();
+
+            try
+            {
+                // Parse JSON using Newtonsoft.Json for JsonDiffPatch
+                JToken referenceToken = JToken.Parse(referenceJson);
+                JToken latestToken = JToken.Parse(latestJson);
+
+                // If we have ignored keys, remove them from both tokens before diffing
+                // This is more efficient than filtering after the diff
+                if (ignoredKeys != null && ignoredKeys.Count > 0)
+                {
+                    referenceToken = RemoveIgnoredKeys(referenceToken, ignoredKeys, "");
+                    latestToken = RemoveIgnoredKeys(latestToken, ignoredKeys, "");
+                }
+
+                // Get the diff using JsonDiffPatch.NET
+                JToken? diff = jdp.Diff(referenceToken, latestToken);
+
+                if (diff == null || diff.Type == JTokenType.Null)
+                {
+                    // No differences found
+                    return differences;
+                }
+
+                // Convert JsonDiffPatch diff format to our PropertyDifference format
+                // Note: We still pass ignoredKeys to ConvertDiffToPropertyDifferences as a safety check
+                ConvertDiffToPropertyDifferences(diff, referenceToken, latestToken, "", differences, referenceDoc, latestDoc, ignoredKeys);
+            }
+            catch (Exception ex)
+            {
+                // If JsonDiffPatch fails, fall back to manual comparison
+                Console.WriteLine($"⚠️  Warning: JsonDiffPatch comparison failed, falling back to manual comparison: {ex.Message}");
+                CompareJsonElements(referenceDoc.RootElement, latestDoc.RootElement, "", differences, null, null, ignoredKeys);
+            }
+            */
+            
+            // Use manual comparison as fallback
+            CompareJsonElements(referenceDoc.RootElement, latestDoc.RootElement, "", differences, null, null, ignoredKeys);
+
+            return differences;
+        }
+
+        /// <summary>
+        /// Remove ignored keys from a JToken recursively
+        /// For objects: removes ignored properties
+        /// For arrays: processes elements but keeps array structure (doesn't remove entire elements to preserve indices)
+        /// </summary>
+        private JToken RemoveIgnoredKeys(JToken token, List<string> ignoredKeys, string currentPath)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+                return token;
+
+            // Check if current path should be ignored (for root-level objects/arrays)
+            if (!string.IsNullOrEmpty(currentPath) && IsPathIgnored(currentPath, ignoredKeys))
+            {
+                return JValue.CreateNull();
+            }
+
+            if (token.Type == JTokenType.Object)
+            {
+                var obj = (JObject)token.DeepClone();
+                var propertiesToRemove = new List<string>();
+
+                foreach (var property in obj.Properties())
+                {
+                    string propertyPath = string.IsNullOrEmpty(currentPath) ? property.Name : $"{currentPath}.{property.Name}";
+
+                    // Check if this property path should be ignored
+                    if (IsPathIgnored(propertyPath, ignoredKeys))
+                    {
+                        propertiesToRemove.Add(property.Name);
+                    }
+                    else
+                    {
+                        // Recursively process nested objects and arrays
+                        obj[property.Name] = RemoveIgnoredKeys(property.Value, ignoredKeys, propertyPath);
+                    }
+                }
+
+                // Remove ignored properties
+                foreach (var propName in propertiesToRemove)
+                {
+                    obj.Remove(propName);
+                }
+
+                return obj;
+            }
+            else if (token.Type == JTokenType.Array)
+            {
+                var array = (JArray)token.DeepClone();
+                var newArray = new JArray();
+
+                for (int i = 0; i < array.Count; i++)
+                {
+                    string arrayPath = $"{currentPath}[{i}]";
+
+                    // Check if entire array element should be ignored
+                    // Note: We check for exact array path match (e.g., "ArrayName[0]") but not wildcard patterns here
+                    // Wildcard patterns like "ArrayName[].property" are handled during diff conversion
+                    if (IsPathIgnored(arrayPath, ignoredKeys))
+                    {
+                        // For exact array element matches, we can skip, but preserve structure
+                        // Add a null placeholder to maintain array indices
+                        newArray.Add(JValue.CreateNull());
+                    }
+                    else
+                    {
+                        // Recursively process array element (this handles nested ignored keys within the element)
+                        var processedElement = RemoveIgnoredKeys(array[i], ignoredKeys, arrayPath);
+                        newArray.Add(processedElement);
+                    }
+                }
+
+                return newArray;
+            }
+
+            // For primitive values, return as-is
+            return token;
+        }
+
+        /// <summary>
+        /// Convert JsonDiffPatch diff format to PropertyDifference list
+        /// </summary>
+        private void ConvertDiffToPropertyDifferences(JToken diff, JToken reference, JToken latest, string currentPath, List<PropertyDifference> differences, JsonDocument referenceDoc, JsonDocument latestDoc, List<string>? ignoredKeys)
+        {
+            if (diff == null || diff.Type == JTokenType.Null)
+                return;
+
+            // Check if this path should be ignored
+            if (IsPathIgnored(currentPath, ignoredKeys))
+            {
+                return;
+            }
+
+            if (diff.Type == JTokenType.Object)
+            {
+                var diffObj = (JObject)diff;
+                foreach (var property in diffObj.Properties())
+                {
+                    string propertyPath = string.IsNullOrEmpty(currentPath) ? property.Name : $"{currentPath}.{property.Name}";
+                    var diffValue = property.Value;
+
+                    if (diffValue == null)
+                        continue;
+
+                    // JsonDiffPatch uses special keys: _t (type), _0 (old value), _1 (new value), etc.
+                    if (property.Name == "_t")
+                    {
+                        // Type change - check if path should be ignored
+                        if (!IsPathIgnored(currentPath, ignoredKeys))
+                        {
+                            string? oldValue = GetJTokenValue(reference)?.ToString();
+                            string? newValue = GetJTokenValue(latest)?.ToString();
+                            
+                            var idInfo = ExtractIdFromJson(referenceDoc.RootElement) ?? ExtractIdFromJson(latestDoc.RootElement);
+                            
+                            differences.Add(new PropertyDifference
+                            {
+                                Path = currentPath,
+                                Type = DifferenceType.TypeChanged,
+                                ReferenceValue = oldValue,
+                                LatestValue = newValue,
+                                ReferenceType = GetJTokenType(reference),
+                                LatestType = GetJTokenType(latest),
+                                IdKey = idInfo?.Key,
+                                IdValue = idInfo?.Value
+                            });
+                        }
+                    }
+                    else if (diffValue.Type == JTokenType.Array)
+                    {
+                        // Array diff: [_0, _1] where _0 is old value, _1 is new value
+                        var diffArray = (JArray)diffValue;
+                        
+                        // Check if this property path should be ignored before processing
+                        if (IsPathIgnored(propertyPath, ignoredKeys))
+                        {
+                            continue;
+                        }
+                        
+                        if (diffArray.Count >= 2)
+                        {
+                            var oldValue = diffArray[0];
+                            var newValue = diffArray[1];
+
+                            // Try to extract entityID
+                            var idInfo = ExtractIdFromJson(referenceDoc.RootElement) ?? ExtractIdFromJson(latestDoc.RootElement);
+                            
+                            // Determine if it's a modification or type change
+                            bool isTypeChange = oldValue?.Type != newValue?.Type;
+                            
+                            differences.Add(new PropertyDifference
+                            {
+                                Path = propertyPath,
+                                Type = isTypeChange ? DifferenceType.TypeChanged : DifferenceType.Modified,
+                                ReferenceValue = GetJTokenValue(oldValue),
+                                LatestValue = GetJTokenValue(newValue),
+                                ReferenceType = GetJTokenType(oldValue),
+                                LatestType = GetJTokenType(newValue),
+                                IdKey = idInfo?.Key,
+                                IdValue = idInfo?.Value
+                            });
+                        }
+                        else if (diffArray.Count == 1)
+                        {
+                            // Single value means added or removed
+                            var value = diffArray[0];
+                            var idInfo = ExtractIdFromJson(referenceDoc.RootElement) ?? ExtractIdFromJson(latestDoc.RootElement);
+                            
+                            // Check if it exists in reference or latest to determine if added or removed
+                            bool existsInReference = reference != null && reference.Type != JTokenType.Null;
+                            
+                            differences.Add(new PropertyDifference
+                            {
+                                Path = propertyPath,
+                                Type = existsInReference ? DifferenceType.Removed : DifferenceType.Added,
+                                ReferenceValue = existsInReference ? GetJTokenValue(value) : null,
+                                LatestValue = existsInReference ? null : GetJTokenValue(value),
+                                ReferenceType = existsInReference ? GetJTokenType(value) : null,
+                                LatestType = existsInReference ? null : GetJTokenType(value),
+                                IdKey = idInfo?.Key,
+                                IdValue = idInfo?.Value
+                            });
+                        }
+                    }
+                    else if (diffValue.Type == JTokenType.Object)
+                    {
+                        // Nested object - check if path should be ignored before recursing
+                        if (!IsPathIgnored(propertyPath, ignoredKeys))
+                        {
+                            JToken? refChild = reference?[property.Name];
+                            JToken? latChild = latest?[property.Name];
+                            ConvertDiffToPropertyDifferences(diffValue, refChild ?? JValue.CreateNull(), latChild ?? JValue.CreateNull(), propertyPath, differences, referenceDoc, latestDoc, ignoredKeys);
+                        }
+                    }
+                    else
+                    {
+                        // Simple value change - check if path should be ignored
+                        if (!IsPathIgnored(propertyPath, ignoredKeys))
+                        {
+                            var idInfo = ExtractIdFromJson(referenceDoc.RootElement) ?? ExtractIdFromJson(latestDoc.RootElement);
+                            
+                            differences.Add(new PropertyDifference
+                            {
+                                Path = propertyPath,
+                                Type = DifferenceType.Modified,
+                                ReferenceValue = GetJTokenValue(reference?[property.Name]),
+                                LatestValue = GetJTokenValue(latest?[property.Name]),
+                                ReferenceType = GetJTokenType(reference?[property.Name]),
+                                LatestType = GetJTokenType(latest?[property.Name]),
+                                IdKey = idInfo?.Key,
+                                IdValue = idInfo?.Value
+                            });
+                        }
+                    }
+                }
+            }
+            else if (diff.Type == JTokenType.Array)
+            {
+                // Array-level diff
+                var diffArray = (JArray)diff;
+                var refArray = reference as JArray;
+                var latArray = latest as JArray;
+
+                int maxLength = Math.Max(refArray?.Count ?? 0, latArray?.Count ?? 0);
+
+                for (int i = 0; i < maxLength; i++)
+                {
+                    string arrayPath = $"{currentPath}[{i}]";
+
+                    if (i >= (refArray?.Count ?? 0))
+                    {
+                        // Added element
+                        if (!IsPathIgnored(arrayPath, ignoredKeys))
+                        {
+                            var idInfo = ExtractIdFromJson(latestDoc.RootElement);
+                            differences.Add(new PropertyDifference
+                            {
+                                Path = arrayPath,
+                                Type = DifferenceType.Added,
+                                ReferenceValue = null,
+                                LatestValue = GetJTokenValue(latArray?[i]),
+                                IdKey = idInfo?.Key,
+                                IdValue = idInfo?.Value,
+                                IsArrayItemAdded = true
+                            });
+                        }
+                    }
+                    else if (i >= (latArray?.Count ?? 0))
+                    {
+                        // Removed element
+                        if (!IsPathIgnored(arrayPath, ignoredKeys))
+                        {
+                            var idInfo = ExtractIdFromJson(referenceDoc.RootElement);
+                            differences.Add(new PropertyDifference
+                            {
+                                Path = arrayPath,
+                                Type = DifferenceType.Removed,
+                                ReferenceValue = GetJTokenValue(refArray?[i]),
+                                LatestValue = null,
+                                IdKey = idInfo?.Key,
+                                IdValue = idInfo?.Value,
+                                IsArrayItemRemoved = true
+                            });
+                        }
+                    }
+                    else
+                    {
+                        // Compare elements at same index
+                        ConvertDiffToPropertyDifferences(diffArray[i] ?? JValue.CreateNull(), refArray?[i] ?? JValue.CreateNull(), latArray?[i] ?? JValue.CreateNull(), arrayPath, differences, referenceDoc, latestDoc, ignoredKeys);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Get a readable value from JToken
+        /// </summary>
+        private object? GetJTokenValue(JToken? token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+                return null;
+
+            return token.Type switch
+            {
+                JTokenType.String => token.ToString(),
+                JTokenType.Integer => token.ToObject<long>(),
+                JTokenType.Float => token.ToObject<decimal>(),
+                JTokenType.Boolean => token.ToObject<bool>(),
+                JTokenType.Object => token.ToString(Formatting.None),
+                JTokenType.Array => token.ToString(Formatting.None),
+                _ => token.ToString()
+            };
+        }
+
+        /// <summary>
+        /// Get type name from JToken
+        /// </summary>
+        private string GetJTokenType(JToken? token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+                return "null";
+
+            return token.Type switch
+            {
+                JTokenType.String => "string",
+                JTokenType.Integer => "int",
+                JTokenType.Float => "float",
+                JTokenType.Boolean => "bool",
+                JTokenType.Object => "object",
+                JTokenType.Array => "array",
+                _ => "unknown"
+            };
         }
 
         /// <summary>
@@ -224,8 +595,8 @@ namespace BatchProcessor
                     string diffFilePath = Path.Combine(diffSubfolder, diffFileName);
 
                     // Serialize diff result to JSON
-                    var options = new JsonSerializerOptions { WriteIndented = true };
-                    string diffJson = JsonSerializer.Serialize(diffResult, options);
+                    var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                    string diffJson = System.Text.Json.JsonSerializer.Serialize(diffResult, options);
                     File.WriteAllText(diffFilePath, diffJson);
 
                     return diffFilePath;

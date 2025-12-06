@@ -58,124 +58,159 @@ namespace BatchProcessor
                 return results;
             }
 
-            // Create a single script file that processes all drawings
-            string tempScriptPath = "";
-            try
+            logCallback?.Invoke($"📊 Processing {drawingPaths.Length} file(s) - each in separate AutoCAD session");
+
+            // Process each file in a separate AutoCAD session
+            for (int i = 0; i < drawingPaths.Length; i++)
             {
-                tempScriptPath = CreateBatchProcessingScript(drawingPaths);
-                logCallback?.Invoke($"📝 Created batch script: {Path.GetFileName(tempScriptPath)}");
-                logCallback?.Invoke($"📊 Processing {drawingPaths.Length} file(s) in single AutoCAD session");
-
-                // Launch AutoCAD once
-                logCallback?.Invoke("🚀 Launching AutoCAD...");
-                _autocadProcess = LaunchAutoCAD(tempScriptPath);
-
-                if (_autocadProcess == null)
-                {
-                    logCallback?.Invoke("❌ Failed to launch AutoCAD");
-                    results.FailedFiles.AddRange(drawingPaths.Select(Path.GetFileName));
-                    return results;
-                }
-
-                // Wait for AutoCAD to start
-                await Task.Delay(3000, cancellationToken);
-                logCallback?.Invoke("⏳ Waiting for AutoCAD to initialize...");
-
-                // Monitor for popups and handle them
-                var popupMonitorTask = MonitorAndHandlePopupsAsync(cancellationToken, logCallback);
-
-                // Wait for script to complete or timeout
-                var timeoutTask = Task.Delay(TimeSpan.FromSeconds(CommandTimeoutSeconds * drawingPaths.Length), cancellationToken);
-                var processTask = WaitForProcessCompletionAsync(_autocadProcess, cancellationToken);
-
-                var completedTask = await Task.WhenAny(processTask, timeoutTask, popupMonitorTask);
-
-                if (completedTask == timeoutTask)
-                {
-                    logCallback?.Invoke($"⚠️ Processing timed out after {CommandTimeoutSeconds * drawingPaths.Length} seconds");
-                    KillAutoCADProcess();
-                    results.FailedFiles.AddRange(drawingPaths.Select(Path.GetFileName));
-                    return results;
-                }
-
                 if (cancellationToken.IsCancellationRequested)
                 {
                     logCallback?.Invoke("⚠️ Processing was cancelled");
-                    KillAutoCADProcess();
-                    return results;
+                    break;
                 }
 
-                // Check if process exited successfully
-                if (_autocadProcess.HasExited)
+                string drawingPath = drawingPaths[i];
+                string fileName = Path.GetFileName(drawingPath);
+
+                // Validate file exists
+                if (string.IsNullOrWhiteSpace(drawingPath) || !File.Exists(drawingPath))
                 {
-                    int exitCode = _autocadProcess.ExitCode;
-                    logCallback?.Invoke($"✅ AutoCAD process completed with exit code: {exitCode}");
-                    
-                    if (exitCode == 0)
-                    {
-                        results.ProcessedFiles.AddRange(drawingPaths.Select(Path.GetFileName));
-                    }
-                    else
-                    {
-                        results.FailedFiles.AddRange(drawingPaths.Select(Path.GetFileName));
-                    }
+                    logCallback?.Invoke($"❌ Skipping invalid or missing file: {fileName}");
+                    results.FailedFiles.Add(fileName);
+                    progress?.Report((i + 1, drawingPaths.Length, fileName));
+                    continue;
                 }
-                else
+
+                logCallback?.Invoke($"");
+                logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                logCallback?.Invoke($"📄 Processing file {i + 1}/{drawingPaths.Length}: {fileName}");
+                logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+                string tempScriptPath = "";
+                try
                 {
-                    // If process is still running, wait a bit more for it to finish
+                    // Create script for this single file
+                    tempScriptPath = CreateProcessingScript(drawingPath);
+                    logCallback?.Invoke($"📝 Created script: {Path.GetFileName(tempScriptPath)}");
+
+                    // Ensure any previous AutoCAD instances are closed
+                    CloseExistingAutoCADInstances();
+                    await Task.Delay(1000, cancellationToken); // Wait a bit for processes to fully close
+
+                    // Launch AutoCAD for this file
+                    logCallback?.Invoke("🚀 Launching AutoCAD...");
+                    _autocadProcess = LaunchAutoCAD(tempScriptPath);
+
+                    if (_autocadProcess == null)
+                    {
+                        logCallback?.Invoke("❌ Failed to launch AutoCAD");
+                        results.FailedFiles.Add(fileName);
+                        progress?.Report((i + 1, drawingPaths.Length, fileName));
+                        continue;
+                    }
+
+                    // Wait for AutoCAD to start
+                    await Task.Delay(3000, cancellationToken);
+                    logCallback?.Invoke("⏳ Waiting for AutoCAD to initialize...");
+
+                    // Monitor for popups and handle them
+                    var popupMonitorTask = MonitorAndHandlePopupsAsync(cancellationToken, logCallback);
+
+                    // Wait for script to complete or timeout
+                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(CommandTimeoutSeconds), cancellationToken);
+                    var processTask = WaitForProcessCompletionAsync(_autocadProcess, cancellationToken);
+
+                    var completedTask = await Task.WhenAny(processTask, timeoutTask, popupMonitorTask);
+
+                    if (completedTask == timeoutTask)
+                    {
+                        logCallback?.Invoke($"⚠️ Processing timed out after {CommandTimeoutSeconds} seconds");
+                        KillAutoCADProcess();
+                        results.FailedFiles.Add(fileName);
+                        progress?.Report((i + 1, drawingPaths.Length, fileName));
+                        continue;
+                    }
+
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        logCallback?.Invoke("⚠️ Processing was cancelled");
+                        KillAutoCADProcess();
+                        break;
+                    }
+
+                    // Wait a bit more to ensure process has fully exited
                     await Task.Delay(2000, cancellationToken);
 
+                    // Check if process exited successfully
                     if (_autocadProcess.HasExited)
                     {
-                        if (_autocadProcess.ExitCode == 0)
+                        int exitCode = _autocadProcess.ExitCode;
+                        logCallback?.Invoke($"✅ AutoCAD process completed with exit code: {exitCode}");
+                        
+                        if (exitCode == 0)
                         {
-                            results.ProcessedFiles.AddRange(drawingPaths.Select(Path.GetFileName));
+                            results.ProcessedFiles.Add(fileName);
+                            logCallback?.Invoke($"✅ Successfully processed: {fileName}");
                         }
                         else
                         {
-                            results.FailedFiles.AddRange(drawingPaths.Select(Path.GetFileName));
+                            results.FailedFiles.Add(fileName);
+                            logCallback?.Invoke($"❌ Failed to process: {fileName} (exit code: {exitCode})");
                         }
                     }
                     else
                     {
                         logCallback?.Invoke("⚠️ AutoCAD process did not exit - forcing termination");
                         KillAutoCADProcess();
-                        results.FailedFiles.AddRange(drawingPaths.Select(Path.GetFileName));
+                        results.FailedFiles.Add(fileName);
+                        logCallback?.Invoke($"❌ Failed to process: {fileName}");
                     }
+
+                    // Ensure AutoCAD is fully closed before processing next file
+                    CloseExistingAutoCADInstances();
+                    await Task.Delay(2000, cancellationToken); // Wait for AutoCAD to fully close
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                logCallback?.Invoke("⚠️ Processing cancelled");
-                KillAutoCADProcess();
-                return results;
-            }
-            catch (Exception ex)
-            {
-                logCallback?.Invoke($"❌ Error during processing: {ex.Message}");
-                KillAutoCADProcess();
-                results.FailedFiles.AddRange(drawingPaths.Select(Path.GetFileName));
-                return results;
-            }
-            finally
-            {
-                // Clean up script file
-                try
+                catch (OperationCanceledException)
                 {
-                    if (!string.IsNullOrEmpty(tempScriptPath) && File.Exists(tempScriptPath))
+                    logCallback?.Invoke("⚠️ Processing cancelled");
+                    KillAutoCADProcess();
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logCallback?.Invoke($"❌ Error processing {fileName}: {ex.Message}");
+                    KillAutoCADProcess();
+                    results.FailedFiles.Add(fileName);
+                }
+                finally
+                {
+                    // Clean up script file
+                    try
                     {
-                        await Task.Delay(1000); // Wait a bit before deleting
-                        File.Delete(tempScriptPath);
+                        if (!string.IsNullOrEmpty(tempScriptPath) && File.Exists(tempScriptPath))
+                        {
+                            await Task.Delay(500); // Wait a bit before deleting
+                            File.Delete(tempScriptPath);
+                        }
                     }
-                }
-                catch
-                {
-                    // Ignore cleanup errors
+                    catch
+                    {
+                        // Ignore cleanup errors
+                    }
+
+                    // Ensure process is killed
+                    KillAutoCADProcess();
                 }
 
-                // Ensure process is killed
-                KillAutoCADProcess();
+                progress?.Report((i + 1, drawingPaths.Length, fileName));
             }
+
+            logCallback?.Invoke($"");
+            logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            logCallback?.Invoke($"📊 Batch processing complete!");
+            logCallback?.Invoke($"   ✅ Successful: {results.ProcessedFiles.Count}");
+            logCallback?.Invoke($"   ❌ Failed: {results.FailedFiles.Count}");
+            logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
             return results;
         }
@@ -301,73 +336,108 @@ namespace BatchProcessor
 
         /// <summary>
         /// Create a batch script file that processes all drawings in a single AutoCAD session
+        /// This function processes multiple files sequentially in one AutoCAD instance
         /// </summary>
-        private string CreateBatchProcessingScript(string[] drawingPaths)
+ private string CreateBatchProcessingScript(string[] drawingPaths)
+{
+    // Validate input
+    if (drawingPaths == null || drawingPaths.Length == 0)
+        throw new ArgumentException("Drawing paths array cannot be null or empty", nameof(drawingPaths));
+
+    if (string.IsNullOrWhiteSpace(_uiPluginDllPath) || !File.Exists(_uiPluginDllPath))
+        throw new FileNotFoundException($"UIPlugin DLL not found: {_uiPluginDllPath}");
+
+    string tempDir = Path.GetTempPath();
+    string scriptName = $"create_relations_batch_{Guid.NewGuid():N}.scr";
+    string scriptPath = Path.Combine(tempDir, scriptName);
+
+    string escapedDllPath = _uiPluginDllPath.Replace("\\", "/");
+    var sb = new System.Text.StringBuilder();
+
+    sb.AppendLine($"; Batch Processing Script - {drawingPaths.Length} file(s)");
+    sb.AppendLine($"; Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+    sb.AppendLine();
+
+    for (int i = 0; i < drawingPaths.Length; i++)
+    {
+        string path = drawingPaths[i];
+
+        if (string.IsNullOrWhiteSpace(path))
         {
-            string tempDir = Path.GetTempPath();
-            string scriptName = $"create_relations_batch_{Guid.NewGuid():N}.scr";
-            string scriptPath = Path.Combine(tempDir, scriptName);
-
-            // Escape paths - use forward slashes for AutoCAD
-            string escapedDllPath = _uiPluginDllPath.Replace("\\", "/");
-
-            // Create AutoCAD script file that processes all drawings
-            var scriptBuilder = new System.Text.StringBuilder();
-            
-            // Process each drawing
-            for (int i = 0; i < drawingPaths.Length; i++)
-            {
-                string escapedDwgPath = drawingPaths[i].Replace("\\", "/");
-                string fileName = Path.GetFileName(drawingPaths[i]);
-                
-                scriptBuilder.AppendLine($"; Processing file {i + 1}/{drawingPaths.Length}: {fileName}");
-                
-                // Open the drawing
-                scriptBuilder.AppendLine($"OPEN");
-                scriptBuilder.AppendLine($"\"{escapedDwgPath}\"");
-                
-                // If opening while a drawing is already open, AutoCAD will prompt:
-                // "Close the current drawing?" - answer Y
-                // AutoCAD may also ask "Save changes?" - answer Y if prompted
-                // Since we save after processing, it usually won't ask to save, but be ready
-                if (i > 0)
-                {
-                    scriptBuilder.AppendLine($"Y"); // Answer "Close current drawing?" with Yes
-                }
-                
-                // Load DLL (only needed once, after first drawing is opened)
-                if (i == 0)
-                {
-                    scriptBuilder.AppendLine($"; Loading UIPlugin DLL");
-                    scriptBuilder.AppendLine($"NETLOAD");
-                    scriptBuilder.AppendLine($"\"{escapedDllPath}\"");
-                }
-                
-                // Run the command
-                scriptBuilder.AppendLine($"CREATE_RELATIONS_FOR_ENTITIES");
-                
-                // Save the drawing
-                scriptBuilder.AppendLine($"QSAVE");
-                
-                // Close the current drawing explicitly (only if not the last file)
-                // This ensures clean state before opening the next file
-                if (i < drawingPaths.Length - 1)
-                {
-                    scriptBuilder.AppendLine($"; Closing drawing before opening next file");
-                    scriptBuilder.AppendLine($"CLOSE");
-                }
-                
-                scriptBuilder.AppendLine();
-            }
-
-            // Quit AutoCAD after all drawings are processed
-            scriptBuilder.AppendLine($"; All drawings processed - closing AutoCAD");
-            scriptBuilder.AppendLine($"QUIT");
-            scriptBuilder.AppendLine($"Y");
-
-            File.WriteAllText(scriptPath, scriptBuilder.ToString());
-            return scriptPath;
+            sb.AppendLine($"; WARNING: Skipping empty path at index {i}");
+            continue;
         }
+        if (!File.Exists(path))
+        {
+            sb.AppendLine($"; ERROR: File not found: {path}");
+            continue;
+        }
+
+        string escapedDwgPath = path.Replace("\\", "/");
+        string fileName = Path.GetFileName(path);
+
+        sb.AppendLine($"; ========================================");
+        sb.AppendLine($"; Processing file {i + 1}/{drawingPaths.Length}: {fileName}");
+        sb.AppendLine($"; ========================================");
+        sb.AppendLine();
+
+        // Close previous drawing but ONLY after first file
+        if (i > 0)
+        {
+            sb.AppendLine($"; Closing previous drawing");
+            sb.AppendLine("_.CLOSE");
+            sb.AppendLine("DELAY 1000");   // Wait 1 second for close to finish
+        }
+
+        // Open drawing
+        sb.AppendLine($"; Opening drawing");
+        sb.AppendLine($"_.OPEN \"{escapedDwgPath}\"");
+        sb.AppendLine("DELAY 2000");   // Wait 2 seconds for drawing to fully load
+
+        // Load plugin
+        sb.AppendLine($"; Loading UIPlugin DLL");
+        sb.AppendLine($"_.NETLOAD \"{escapedDllPath}\"");
+        sb.AppendLine("DELAY 1000");   // Wait 1 second for DLL to load
+
+        // Ready check
+        sb.AppendLine("_.REDRAW");
+
+        // Execute your command
+        sb.AppendLine($"; Running CREATE_RELATIONS_FOR_ENTITIES");
+        sb.AppendLine("CREATE_RELATIONS_FOR_ENTITIES");
+        sb.AppendLine("DELAY 2000");   // Wait 2 seconds for command to complete
+
+        // Save drawing
+        sb.AppendLine($"; Saving drawing");
+        sb.AppendLine("_.QSAVE");
+        sb.AppendLine();
+    }
+
+    // Quit AutoCAD
+    sb.AppendLine($"; ========================================");
+    sb.AppendLine($"; All drawings processed - closing AutoCAD");
+    sb.AppendLine($"; ========================================");
+    sb.AppendLine("_.QUIT");   // No Y → SAFE
+    sb.AppendLine();
+
+    // Write to file
+    string scriptContent = sb.ToString();
+    File.WriteAllText(scriptPath, scriptContent);
+
+    // Save debug copy (optional)
+    try
+    {
+        string debugScriptPath = Path.Combine(
+            Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? Path.GetTempPath(),
+            $"debug_batch_script_{DateTime.Now:yyyyMMdd_HHmmss}.scr"
+        );
+        File.WriteAllText(debugScriptPath, scriptContent);
+    }
+    catch { }
+
+    return scriptPath;
+}
+
 
         /// <summary>
         /// Create a script file for processing a single drawing (legacy method)
@@ -378,25 +448,41 @@ namespace BatchProcessor
             string scriptName = $"create_relations_{Guid.NewGuid():N}.scr";
             string scriptPath = Path.Combine(tempDir, scriptName);
 
-            // Escape paths - use forward slashes or double backslashes for AutoCAD
+            // Escape paths - use forward slashes for AutoCAD
             string escapedDllPath = _uiPluginDllPath.Replace("\\", "/");
-
-            // Create AutoCAD script file (.scr format)
-            // Script format: each command on its own line
-            // Open drawing first, then load DLL and run command
             string escapedDwgPath = drawingPath.Replace("\\", "/");
-            
-            var scriptContent = $@"
-OPEN
-""{escapedDwgPath}""
-NETLOAD
-""{escapedDllPath}""
-CREATE_RELATIONS_FOR_ENTITIES
-QSAVE
-QUIT
-Y
-";
+            string fileName = Path.GetFileName(drawingPath);
 
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"; Processing Script - {fileName}");
+            sb.AppendLine($"; Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine();
+
+            // Open drawing
+            sb.AppendLine($"; Opening drawing: {fileName}");
+            sb.AppendLine($"_.OPEN \"{escapedDwgPath}\"");
+
+            // Load plugin
+            sb.AppendLine($"; Loading UIPlugin DLL");
+            sb.AppendLine($"_.NETLOAD \"{escapedDllPath}\"");
+
+            // Ready check
+            sb.AppendLine("_.REDRAW");
+
+            // Execute command
+            sb.AppendLine($"; Running CREATE_RELATIONS_FOR_ENTITIES");
+            sb.AppendLine("CREATE_RELATIONS_FOR_ENTITIES");
+
+            // Save drawing
+            sb.AppendLine($"; Saving drawing");
+            sb.AppendLine("_.QSAVE");
+
+            // Quit AutoCAD
+            sb.AppendLine($"; Closing AutoCAD");
+            sb.AppendLine("_.QUIT");
+            sb.AppendLine();
+
+            string scriptContent = sb.ToString();
             File.WriteAllText(scriptPath, scriptContent);
             return scriptPath;
         }
@@ -467,6 +553,7 @@ Y
         /// </summary>
         private async Task MonitorAndHandlePopupsAsync(CancellationToken cancellationToken, Action<string>? logCallback)
         {
+            int consecutivePopupCount = 0;
             while (!cancellationToken.IsCancellationRequested && (_autocadProcess == null || !_autocadProcess.HasExited))
             {
                 try
@@ -475,16 +562,22 @@ Y
 
                     // Find AutoCAD windows
                     var autocadWindows = FindAutoCADWindows();
+                    bool foundPopup = false;
                     
                     foreach (var window in autocadWindows)
                     {
                         // Check if this is a dialog/popup
                         if (IsPopupWindow(window))
                         {
-                            logCallback?.Invoke("⚠️ Popup detected - attempting to dismiss...");
+                            foundPopup = true;
+                            consecutivePopupCount++;
+                            string windowName = window.Current.Name ?? "Unknown";
+                            logCallback?.Invoke($"⚠️ Popup detected ({consecutivePopupCount}x): {windowName} - attempting to dismiss...");
+                            
                             if (DismissPopup(window))
                             {
                                 logCallback?.Invoke("✅ Popup dismissed");
+                                consecutivePopupCount = 0; // Reset counter on success
                             }
                             else
                             {
@@ -492,8 +585,31 @@ Y
                                 // Try pressing Enter as fallback
                                 SendKeys.SendWait("{ENTER}");
                                 await Task.Delay(500, cancellationToken);
+                                
+                                // Also try Escape key in case it's a cancelable dialog
+                                SendKeys.SendWait("{ESC}");
+                                await Task.Delay(300, cancellationToken);
                             }
                         }
+                    }
+                    
+                    // If no popup found, reset counter
+                    if (!foundPopup)
+                    {
+                        consecutivePopupCount = 0;
+                    }
+                    // If we've seen the same popup many times, it might be stuck
+                    else if (consecutivePopupCount > 10)
+                    {
+                        logCallback?.Invoke("⚠️ Popup appears stuck - trying aggressive dismissal");
+                        // Try multiple dismissal methods
+                        SendKeys.SendWait("{ESC}");
+                        await Task.Delay(200, cancellationToken);
+                        SendKeys.SendWait("{ENTER}");
+                        await Task.Delay(200, cancellationToken);
+                        SendKeys.SendWait("{TAB}{ENTER}"); // Tab to OK button and press Enter
+                        await Task.Delay(200, cancellationToken);
+                        consecutivePopupCount = 0; // Reset to prevent infinite loop
                     }
                 }
                 catch (OperationCanceledException)
