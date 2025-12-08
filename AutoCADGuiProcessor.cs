@@ -87,11 +87,16 @@ namespace BatchProcessor
                 logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
                 string tempScriptPath = "";
+                string logFilePath = "";
                 try
                 {
                     // Create script for this single file
-                    tempScriptPath = CreateProcessingScript(drawingPath);
+                    tempScriptPath = CreateProcessingScript(drawingPath, out logFilePath);
                     logCallback?.Invoke($"📝 Created script: {Path.GetFileName(tempScriptPath)}");
+                    if (!string.IsNullOrEmpty(logFilePath))
+                    {
+                        logCallback?.Invoke($"📋 Log file: {Path.GetFileName(logFilePath)}");
+                    }
 
                     // Ensure any previous AutoCAD instances are closed
                     CloseExistingAutoCADInstances();
@@ -99,7 +104,7 @@ namespace BatchProcessor
 
                     // Launch AutoCAD for this file
                     logCallback?.Invoke("🚀 Launching AutoCAD...");
-                    _autocadProcess = LaunchAutoCAD(tempScriptPath);
+                    _autocadProcess = LaunchAutoCAD(tempScriptPath, logCallback);
 
                     if (_autocadProcess == null)
                     {
@@ -140,6 +145,33 @@ namespace BatchProcessor
 
                     // Wait a bit more to ensure process has fully exited
                     await Task.Delay(2000, cancellationToken);
+
+                    // Read AutoCAD log file if it exists
+                    if (!string.IsNullOrEmpty(logFilePath) && File.Exists(logFilePath))
+                    {
+                        try
+                        {
+                            await Task.Delay(500, cancellationToken); // Wait a bit more for file to be fully written
+                            string[] logLines = File.ReadAllLines(logFilePath);
+                            logCallback?.Invoke($"");
+                            logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                            logCallback?.Invoke($"📋 AutoCAD Command Line Log:");
+                            logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                            foreach (string line in logLines)
+                            {
+                                if (!string.IsNullOrWhiteSpace(line))
+                                {
+                                    logCallback?.Invoke($"  {line}");
+                                }
+                            }
+                            logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                            logCallback?.Invoke($"");
+                        }
+                        catch (Exception logEx)
+                        {
+                            logCallback?.Invoke($"⚠️ Could not read log file: {logEx.Message}");
+                        }
+                    }
 
                     // Check if process exited successfully
                     if (_autocadProcess.HasExited)
@@ -236,16 +268,21 @@ namespace BatchProcessor
             }
 
             string tempScriptPath = "";
+            string logFilePath = "";
             try
             {
                 // Create script file
-                tempScriptPath = CreateProcessingScript(drawingPath);
+                tempScriptPath = CreateProcessingScript(drawingPath, out logFilePath);
                 logCallback?.Invoke($"📝 Created script: {Path.GetFileName(tempScriptPath)}");
+                if (!string.IsNullOrEmpty(logFilePath))
+                {
+                    logCallback?.Invoke($"📋 Log file: {Path.GetFileName(logFilePath)}");
+                }
 
                 // Launch AutoCAD with drawing and script
                 logCallback?.Invoke("🚀 Launching AutoCAD...");
                 logCallback?.Invoke($"📂 Drawing: {Path.GetFileName(drawingPath)}");
-                _autocadProcess = LaunchAutoCAD(drawingPath, tempScriptPath);
+                _autocadProcess = LaunchAutoCAD(drawingPath, tempScriptPath, logCallback);
                 
                 if (_autocadProcess == null)
                 {
@@ -278,6 +315,60 @@ namespace BatchProcessor
                     logCallback?.Invoke("⚠️ Processing was cancelled");
                     KillAutoCADProcess();
                     return false;
+                }
+
+                // Read AutoCAD log file if it exists
+                if (!string.IsNullOrEmpty(logFilePath) && File.Exists(logFilePath))
+                {
+                    try
+                    {
+                        await Task.Delay(500, cancellationToken); // Wait a bit more for file to be fully written
+                        string[] logLines = File.ReadAllLines(logFilePath);
+                        logCallback?.Invoke($"");
+                        logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                        logCallback?.Invoke($"📋 AutoCAD Command Line Log:");
+                        logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                        foreach (string line in logLines)
+                        {
+                            if (!string.IsNullOrWhiteSpace(line))
+                            {
+                                logCallback?.Invoke($"  {line}");
+                            }
+                        }
+                        logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                        logCallback?.Invoke($"");
+                    }
+                    catch (Exception logEx)
+                    {
+                        logCallback?.Invoke($"⚠️ Could not read log file: {logEx.Message}");
+                    }
+                }
+
+                // Read AutoCAD log file if it exists
+                if (!string.IsNullOrEmpty(logFilePath) && File.Exists(logFilePath))
+                {
+                    try
+                    {
+                        await Task.Delay(500, cancellationToken); // Wait a bit more for file to be fully written
+                        string[] logLines = File.ReadAllLines(logFilePath);
+                        logCallback?.Invoke($"");
+                        logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                        logCallback?.Invoke($"📋 AutoCAD Command Line Log (WriteMessage output):");
+                        logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                        foreach (string line in logLines)
+                        {
+                            if (!string.IsNullOrWhiteSpace(line))
+                            {
+                                logCallback?.Invoke($"  {line}");
+                            }
+                        }
+                        logCallback?.Invoke($"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                        logCallback?.Invoke($"");
+                    }
+                    catch (Exception logEx)
+                    {
+                        logCallback?.Invoke($"⚠️ Could not read log file: {logEx.Message}");
+                    }
                 }
 
                 // Check if process exited successfully
@@ -351,11 +442,23 @@ namespace BatchProcessor
     string scriptName = $"create_relations_batch_{Guid.NewGuid():N}.scr";
     string scriptPath = Path.Combine(tempDir, scriptName);
 
+    // Create log file path for AutoCAD command line output
+    string batchLogFilePath = Path.Combine(tempDir, $"autocad_cmdlog_batch_{Guid.NewGuid():N}.log");
+    string escapedBatchLogPath = batchLogFilePath.Replace("\\", "/");
+
     string escapedDllPath = _uiPluginDllPath.Replace("\\", "/");
     var sb = new System.Text.StringBuilder();
 
     sb.AppendLine($"; Batch Processing Script - {drawingPaths.Length} file(s)");
     sb.AppendLine($"; Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+    sb.AppendLine();
+    
+    // Enable AutoCAD logging to capture WriteMessage output
+    sb.AppendLine("(setvar \"CMDECHO\" 1)");
+    sb.AppendLine($"(setvar \"LOGFILEMODE\" 1)"); // Enable log file
+    sb.AppendLine($"(setvar \"LOGFILENAME\" \"{escapedBatchLogPath}\")"); // Set log file path
+    sb.AppendLine($"(princ (strcat \"\\n[AutoCAD] Starting batch processing - {drawingPaths.Length} file(s)\\n\"))");
+    sb.AppendLine($"(princ (strcat \"[AutoCAD] Log file: {escapedBatchLogPath}\\n\"))");
     sb.AppendLine();
 
     for (int i = 0; i < drawingPaths.Length; i++)
@@ -391,25 +494,34 @@ namespace BatchProcessor
 
         // Open drawing
         sb.AppendLine($"; Opening drawing");
+        sb.AppendLine($"(princ (strcat \"\\n[AutoCAD] Opening drawing: {Path.GetFileName(path)}\\n\"))");
         sb.AppendLine($"_.OPEN \"{escapedDwgPath}\"");
+        sb.AppendLine("(princ \"[AutoCAD] Drawing opened successfully\\n\")");
         sb.AppendLine("DELAY 2000");   // Wait 2 seconds for drawing to fully load
 
         // Load plugin
         sb.AppendLine($"; Loading UIPlugin DLL");
+        sb.AppendLine($"(princ (strcat \"[AutoCAD] Loading UIPlugin DLL: {Path.GetFileName(_uiPluginDllPath)}\\n\"))");
         sb.AppendLine($"_.NETLOAD \"{escapedDllPath}\"");
+        sb.AppendLine("(princ \"[AutoCAD] UIPlugin DLL loaded\\n\")");
         sb.AppendLine("DELAY 1000");   // Wait 1 second for DLL to load
 
         // Ready check
         sb.AppendLine("_.REDRAW");
+        sb.AppendLine("(princ \"[AutoCAD] Ready to execute command\\n\")");
 
         // Execute your command
         sb.AppendLine($"; Running CREATE_RELATIONS_FOR_ENTITIES");
+        sb.AppendLine("(princ \"[AutoCAD] Executing CREATE_RELATIONS_FOR_ENTITIES command...\\n\")");
         sb.AppendLine("CREATE_RELATIONS_FOR_ENTITIES");
+        sb.AppendLine("(princ \"[AutoCAD] CREATE_RELATIONS_FOR_ENTITIES command completed\\n\")");
         sb.AppendLine("DELAY 2000");   // Wait 2 seconds for command to complete
 
         // Save drawing
         sb.AppendLine($"; Saving drawing");
+        sb.AppendLine("(princ \"[AutoCAD] Saving drawing...\\n\")");
         sb.AppendLine("_.QSAVE");
+        sb.AppendLine("(princ \"[AutoCAD] Drawing saved\\n\")");
         sb.AppendLine();
     }
 
@@ -417,6 +529,8 @@ namespace BatchProcessor
     sb.AppendLine($"; ========================================");
     sb.AppendLine($"; All drawings processed - closing AutoCAD");
     sb.AppendLine($"; ========================================");
+    sb.AppendLine("(princ \"[AutoCAD] Batch processing complete!\\n\")");
+    sb.AppendLine($"(setvar \"LOGFILEMODE\" 0)"); // Disable log file before quit
     sb.AppendLine("_.QUIT");   // No Y → SAFE
     sb.AppendLine();
 
@@ -442,11 +556,15 @@ namespace BatchProcessor
         /// <summary>
         /// Create a script file for processing a single drawing (legacy method)
         /// </summary>
-        private string CreateProcessingScript(string drawingPath)
+        private string CreateProcessingScript(string drawingPath, out string logFilePath)
         {
             string tempDir = Path.GetTempPath();
             string scriptName = $"create_relations_{Guid.NewGuid():N}.scr";
             string scriptPath = Path.Combine(tempDir, scriptName);
+
+            // Create log file path for AutoCAD command line output
+            logFilePath = Path.Combine(tempDir, $"autocad_cmdlog_{Guid.NewGuid():N}.log");
+            string escapedLogPath = logFilePath.Replace("\\", "/");
 
             // Escape paths - use forward slashes for AutoCAD
             string escapedDllPath = _uiPluginDllPath.Replace("\\", "/");
@@ -457,40 +575,63 @@ namespace BatchProcessor
             sb.AppendLine($"; Processing Script - {fileName}");
             sb.AppendLine($"; Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine();
+            
+            // Enable command echo and AutoCAD logging
+            sb.AppendLine("(setvar \"CMDECHO\" 1)");
+            sb.AppendLine($"(setvar \"LOGFILEMODE\" 1)"); // Enable log file
+            sb.AppendLine($"(setvar \"LOGFILENAME\" \"{escapedLogPath}\")"); // Set log file path
+            sb.AppendLine($"(princ (strcat \"\\n[AutoCAD] Starting processing: {fileName}\\n\"))");
+            sb.AppendLine($"(princ (strcat \"[AutoCAD] Log file: {logFilePath}\\n\"))");
 
             // Open drawing
             sb.AppendLine($"; Opening drawing: {fileName}");
+            sb.AppendLine($"(princ (strcat \"\\n[AutoCAD] Opening drawing: {fileName}\\n\"))");
             sb.AppendLine($"_.OPEN \"{escapedDwgPath}\"");
+            sb.AppendLine("(princ \"[AutoCAD] Drawing opened successfully\\n\")");
 
             // Load plugin
             sb.AppendLine($"; Loading UIPlugin DLL");
+            sb.AppendLine($"(princ (strcat \"[AutoCAD] Loading UIPlugin DLL: {Path.GetFileName(_uiPluginDllPath)}\\n\"))");
             sb.AppendLine($"_.NETLOAD \"{escapedDllPath}\"");
+            sb.AppendLine("(princ \"[AutoCAD] UIPlugin DLL loaded\\n\")");
 
             // Ready check
             sb.AppendLine("_.REDRAW");
+            sb.AppendLine("(princ \"[AutoCAD] Ready to execute command\\n\")");
 
             // Execute command
             sb.AppendLine($"; Running CREATE_RELATIONS_FOR_ENTITIES");
+            sb.AppendLine("(princ \"[AutoCAD] Executing CREATE_RELATIONS_FOR_ENTITIES command...\\n\")");
             sb.AppendLine("CREATE_RELATIONS_FOR_ENTITIES");
+            sb.AppendLine("(princ \"[AutoCAD] CREATE_RELATIONS_FOR_ENTITIES command completed\\n\")");
 
             // Save drawing
             sb.AppendLine($"; Saving drawing");
+            sb.AppendLine("(princ \"[AutoCAD] Saving drawing...\\n\")");
             sb.AppendLine("_.QSAVE");
+            sb.AppendLine("(princ \"[AutoCAD] Drawing saved\\n\")");
 
             // Quit AutoCAD
             sb.AppendLine($"; Closing AutoCAD");
+            sb.AppendLine("(princ \"[AutoCAD] Closing AutoCAD...\\n\")");
+            sb.AppendLine("(princ \"[AutoCAD] Processing complete!\\n\")");
+            sb.AppendLine($"(setvar \"LOGFILEMODE\" 0)"); // Disable log file before quit
             sb.AppendLine("_.QUIT");
             sb.AppendLine();
 
             string scriptContent = sb.ToString();
             File.WriteAllText(scriptPath, scriptContent);
+            
+            // Store log file path - we'll read it after processing
+            // Note: We'll need to modify the method signature to return both script path and log path
+            // For now, we'll construct the log path in the calling method
             return scriptPath;
         }
 
         /// <summary>
         /// Launch AutoCAD with the script (overloaded for batch processing)
         /// </summary>
-        private Process? LaunchAutoCAD(string scriptPath)
+        private Process? LaunchAutoCAD(string scriptPath, Action<string>? logCallback = null)
         {
             try
             {
@@ -501,13 +642,60 @@ namespace BatchProcessor
                 {
                     FileName = _autocadExePath,
                     // Run script file: acad.exe /b script.scr
+                    // Use /nologo to suppress logo, /s to run script, and redirect output
                     Arguments = $"/nologo /b \"{scriptPath}\"",
                     UseShellExecute = false,
-                    CreateNoWindow = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true, // Must be true to capture output
                     WorkingDirectory = Path.GetDirectoryName(_autocadExePath) ?? ""
                 };
 
                 var process = Process.Start(startInfo);
+                
+                if (process != null && logCallback != null)
+                {
+                    // Capture stdout - AutoCAD GUI doesn't output much, but LISP (princ) commands will show here
+                    process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                        {
+                            string data = e.Data.Trim();
+                            // Show all output from LISP (princ) commands and important messages
+                            if (!string.IsNullOrWhiteSpace(data))
+                            {
+                                // Check if it's our log message (starts with [AutoCAD])
+                                if (data.Contains("[AutoCAD]"))
+                                {
+                                    logCallback(data);
+                                }
+                                // Also show errors and important messages
+                                else if (data.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+                                         data.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+                                         data.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                                         data.Contains("Failed", StringComparison.OrdinalIgnoreCase) ||
+                                         data.Contains("NETLOAD", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    logCallback($"[AutoCAD] {data}");
+                                }
+                            }
+                        }
+                    };
+                    
+                    // Capture stderr
+                    process.ErrorDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                        {
+                            logCallback($"[AutoCAD Error] {e.Data}");
+                        }
+                    };
+                    
+                    // Start async reading
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+                }
+                
                 return process;
             }
             catch (Exception ex)
@@ -520,7 +708,7 @@ namespace BatchProcessor
         /// <summary>
         /// Launch AutoCAD with the script (legacy method - kept for single file processing)
         /// </summary>
-        private Process? LaunchAutoCAD(string drawingPath, string scriptPath)
+        private Process? LaunchAutoCAD(string drawingPath, string scriptPath, Action<string>? logCallback = null)
         {
             try
             {
@@ -534,11 +722,57 @@ namespace BatchProcessor
                     // Script file will open the drawing and process it
                     Arguments = $"/nologo /b \"{scriptPath}\"",
                     UseShellExecute = false,
-                    CreateNoWindow = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true, // Must be true to capture output
                     WorkingDirectory = Path.GetDirectoryName(_autocadExePath) ?? ""
                 };
 
                 var process = Process.Start(startInfo);
+                
+                if (process != null && logCallback != null)
+                {
+                    // Capture stdout - AutoCAD GUI doesn't output much, but LISP (princ) commands will show here
+                    process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                        {
+                            string data = e.Data.Trim();
+                            // Show all output from LISP (princ) commands and important messages
+                            if (!string.IsNullOrWhiteSpace(data))
+                            {
+                                // Check if it's our log message (starts with [AutoCAD])
+                                if (data.Contains("[AutoCAD]"))
+                                {
+                                    logCallback(data);
+                                }
+                                // Also show errors and important messages
+                                else if (data.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+                                         data.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+                                         data.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+                                         data.Contains("Failed", StringComparison.OrdinalIgnoreCase) ||
+                                         data.Contains("NETLOAD", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    logCallback($"[AutoCAD] {data}");
+                                }
+                            }
+                        }
+                    };
+                    
+                    // Capture stderr
+                    process.ErrorDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                        {
+                            logCallback($"[AutoCAD Error] {e.Data}");
+                        }
+                    };
+                    
+                    // Start async reading
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+                }
+                
                 return process;
             }
             catch (Exception ex)
