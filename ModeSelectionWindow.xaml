@@ -40,8 +40,84 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Commands Execution Mode -->
+            <!-- Create Relations Mode -->
             <Border Grid.Row="0"
+                   Background="White" 
+                   CornerRadius="8" 
+                   Padding="15"
+                   Cursor="Hand"
+                   MouseLeftButtonDown="Border_RelationsMode_Click"
+                   BorderThickness="2"
+                   BorderBrush="#E67E22"
+                   Margin="0,0,0,10">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#D35400"/>
+                                <Setter Property="Background" Value="#FEF5E7"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Icon -->
+                    <TextBlock Grid.Column="0"
+                              Text="🔗" 
+                              FontSize="36" 
+                              VerticalAlignment="Center"
+                              Margin="0,0,15,0"/>
+                    
+                    <!-- Content -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Create Relations" 
+                                  FontSize="18" 
+                                  FontWeight="Bold" 
+                                  Margin="0,0,0,8"
+                                  Foreground="#2C3E50"/>
+                        <TextBlock TextWrapping="Wrap" 
+                                  Foreground="#7F8C8D"
+                                  FontSize="12"
+                                  LineHeight="18">
+                            <Run Text="Process drawings using AutoCAD GUI. Load UIPlugin DLL and run CREATE_RELATIONS_FOR_ENTITIES command."/>
+                        </TextBlock>
+                    </StackPanel>
+                    
+                    <!-- Button -->
+                    <Button Grid.Column="2"
+                           x:Name="BtnRelationsMode" 
+                           Content="Select" 
+                           Margin="15,0,0,0"
+                           Padding="25,12"
+                           VerticalAlignment="Center"
+                           Background="#E67E22"
+                           Foreground="White"
+                           FontSize="14"
+                           FontWeight="Bold"
+                           BorderThickness="0"
+                           Click="BtnRelationsMode_Click"
+                           Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#D35400"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Pre Scrutiny Validations Mode -->
+            <Border Grid.Row="1"
                    Background="White" 
                    CornerRadius="8" 
                    Padding="15"
@@ -76,7 +152,7 @@
                     
                     <!-- Content -->
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="Commands Execution" 
+                        <TextBlock Text="Pre Scrutiny Validations" 
                                   FontSize="18" 
                                   FontWeight="Bold" 
                                   Margin="0,0,0,8"
@@ -85,7 +161,7 @@
                                   Foreground="#7F8C8D"
                                   FontSize="12"
                                   LineHeight="18">
-                            <Run Text="Process AutoCAD drawings in batch mode. Execute commands on multiple DWG files and generate JSON output files."/>
+                            <Run Text="Process AutoCAD drawings in batch mode. Execute RunPreScrutinyValidationsBatch command on multiple DWG files and generate JSON output files."/>
                         </TextBlock>
                     </StackPanel>
                     
@@ -117,15 +193,14 @@
             </Border>
 
             <!-- JSON Diff Comparison Mode -->
-            <Border Grid.Row="1"
+            <Border Grid.Row="2"
                    Background="White" 
                    CornerRadius="8" 
                    Padding="15"
                    Cursor="Hand"
                    MouseLeftButtonDown="Border_DiffMode_Click"
                    BorderThickness="2"
-                   BorderBrush="#27AE60"
-                   Margin="0,0,0,10">
+                   BorderBrush="#27AE60">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Style.Triggers>
@@ -190,81 +265,6 @@
                         </Button.Style>
                     </Button>
                 </Grid>
-            </Border>
-
-            <!-- Create Relations Mode -->
-            <Border Grid.Row="2"
-                   Background="White" 
-                   CornerRadius="8" 
-                   Padding="15"
-                   Cursor="Hand"
-                   MouseLeftButtonDown="Border_RelationsMode_Click"
-                   BorderThickness="2"
-                   BorderBrush="#E67E22">
-                    <Border.Style>
-                        <Style TargetType="Border">
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="BorderBrush" Value="#D35400"/>
-                                    <Setter Property="Background" Value="#FEF5E7"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        
-                        <!-- Icon -->
-                        <TextBlock Grid.Column="0"
-                                  Text="🔗" 
-                                  FontSize="36" 
-                                  VerticalAlignment="Center"
-                                  Margin="0,0,15,0"/>
-                        
-                        <!-- Content -->
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock Text="Create Relations" 
-                                      FontSize="18" 
-                                      FontWeight="Bold" 
-                                      Margin="0,0,0,8"
-                                      Foreground="#2C3E50"/>
-                            <TextBlock TextWrapping="Wrap" 
-                                      Foreground="#7F8C8D"
-                                      FontSize="12"
-                                      LineHeight="18">
-                                <Run Text="Process drawings using AutoCAD GUI. Load UIPlugin DLL and run CREATE_RELATIONS_FOR_ENTITIES command."/>
-                            </TextBlock>
-                        </StackPanel>
-                        
-                        <!-- Button -->
-                        <Button Grid.Column="2"
-                               x:Name="BtnRelationsMode" 
-                               Content="Select" 
-                               Margin="15,0,0,0"
-                               Padding="25,12"
-                               VerticalAlignment="Center"
-                               Background="#E67E22"
-                               Foreground="White"
-                               FontSize="14"
-                               FontWeight="Bold"
-                               BorderThickness="0"
-                               Click="BtnRelationsMode_Click"
-                               Cursor="Hand">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Style.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Background" Value="#D35400"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                    </Grid>
             </Border>
         </Grid>
 

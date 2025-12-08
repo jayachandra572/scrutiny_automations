@@ -198,10 +198,13 @@ namespace BatchProcessor
                     // Catch any unhandled exceptions to prevent stopping the entire batch
                     // Create a failed result for this file
                     Console.WriteLine($"\n❌ UNHANDLED EXCEPTION processing {drawingName}: {ex.Message}");
+                    Console.WriteLine($"  📋 REASON: Exception occurred before AutoCAD processing could start");
+                    Console.WriteLine($"  📋 REASON: Exception type: {ex.GetType().Name}");
                     if (_enableVerboseLogging)
                     {
-                        Console.WriteLine($"   Stack trace: {ex.StackTrace}");
+                        Console.WriteLine($"  📋 REASON: Stack trace: {ex.StackTrace}");
                     }
+                    Console.WriteLine($"  ❌ RESULT: File marked as NON-PROCESSED (exception prevented processing)");
                     
                     result = new ProcessingResult
                     {
@@ -239,7 +242,7 @@ namespace BatchProcessor
             // from non-processed files (error before processing - no JSON)
             var failedFiles = results
                 .Where(r => !r.Success && r.WasProcessed)
-                .Select(r => r.DrawingName)
+                .Select(r => r.DrawingPath) // Store full path instead of just name
                 .ToList();
             
             var nonProcessedFiles = results
@@ -316,6 +319,7 @@ namespace BatchProcessor
             };
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+            bool processStarted = false; // Track if process was successfully started (declared at method scope)
 
             try
             {
@@ -357,6 +361,9 @@ namespace BatchProcessor
                         if (string.IsNullOrWhiteSpace(drawingConfigPath) || !File.Exists(drawingConfigPath))
                         {
                             Console.WriteLine($"  ❌ ERROR: No config available for this drawing");
+                            Console.WriteLine($"  📋 REASON: Drawing file '{result.DrawingName}' is not found in CSV file");
+                            Console.WriteLine($"  📋 REASON: No base config file provided as fallback");
+                            Console.WriteLine($"  ❌ RESULT: File marked as NON-PROCESSED (AutoCAD never started)");
                             result.Success = false;
                             result.WasProcessed = false; // Not processed - error before AutoCAD
                             result.ErrorMessage = "No configuration available (not in CSV and no base config)";
@@ -377,6 +384,9 @@ namespace BatchProcessor
                 if (string.IsNullOrWhiteSpace(drawingConfigJson))
                 {
                     Console.WriteLine($"  ❌ ERROR: No config content available");
+                    Console.WriteLine($"  📋 REASON: Configuration JSON is empty or null");
+                    Console.WriteLine($"  📋 REASON: Cannot proceed without valid configuration parameters");
+                    Console.WriteLine($"  ❌ RESULT: File marked as NON-PROCESSED (AutoCAD never started)");
                     result.Success = false;
                     result.WasProcessed = false; // Not processed - error before AutoCAD
                     result.ErrorMessage = "No configuration content available";
@@ -418,19 +428,25 @@ namespace BatchProcessor
                 process.StartInfo.EnvironmentVariables["TIMESTAMP"] = timestamp;
                 process.StartInfo.EnvironmentVariables["DRAWING_NAME"] = result.DrawingName;
 
-                // Always log environment variables for debugging
-                Console.WriteLine($"  ✅ Passing config JSON directly (no temp file)");
-                Console.WriteLine($"  📦 Environment Variables:");
-                Console.WriteLine($"     OUTPUT_FOLDER = {outputFolder}");
-                Console.WriteLine($"     OUTPUT_FILENAME = {outputFileName}");
-                Console.WriteLine($"     INPUT_JSON_CONTENT = {drawingConfigJson.Length} chars");
-                Console.WriteLine($"     DRAWING_NAME = {result.DrawingName}");
-                Console.WriteLine();
+                // Disable verbose AutoCAD logs - suppress environment variable details
+                // (user requested to disable AutoCAD logs)
+                if (_enableVerboseLogging)
+                {
+                    Console.WriteLine($"  ✅ Passing config JSON directly (no temp file)");
+                    Console.WriteLine($"  📦 Environment Variables:");
+                    Console.WriteLine($"     OUTPUT_FOLDER = {outputFolder}");
+                    Console.WriteLine($"     OUTPUT_FILENAME = {outputFileName}");
+                    Console.WriteLine($"     INPUT_JSON_CONTENT = {drawingConfigJson.Length} chars");
+                    Console.WriteLine($"     DRAWING_NAME = {result.DrawingName}");
+                    Console.WriteLine();
+                }
 
                 // Capture output
                 var outputBuilder = new StringBuilder();
                 var dllLoadErrors = new List<string>();
                 bool uiPluginLoadFailed = false;
+                bool commandNotFound = false;
+                string commandNotFoundMessage = null;
                 
                 process.OutputDataReceived += (sender, e) =>
                 {
@@ -440,12 +456,22 @@ namespace BatchProcessor
                         
                         string data = e.Data.Trim();
                         
-                        // Check for DLL loading messages
-                        if (data.Contains("[Loading]", StringComparison.OrdinalIgnoreCase))
+                        // Check for command not found errors
+                        if (data.Contains("Unknown command", StringComparison.OrdinalIgnoreCase) ||
+                            data.Contains("Command not found", StringComparison.OrdinalIgnoreCase) ||
+                            (data.Contains("not recognized", StringComparison.OrdinalIgnoreCase) && 
+                             (data.Contains("command", StringComparison.OrdinalIgnoreCase) || 
+                              data.Contains(_mainCommand, StringComparison.OrdinalIgnoreCase))) ||
+                            (data.Contains("not found", StringComparison.OrdinalIgnoreCase) && 
+                             data.Contains(_mainCommand, StringComparison.OrdinalIgnoreCase)))
                         {
-                            // Always show loading messages
-                            Console.WriteLine($"  {data}");
+                            commandNotFound = true;
+                            commandNotFoundMessage = data;
+                            Console.WriteLine($"  ❌ Command Not Found: {data}");
                         }
+                        
+                        // Disable AutoCAD logs - suppress DLL loading messages
+                        // (user requested to disable AutoCAD logs)
                         
                         // Check for NETLOAD errors
                         if (data.Contains("NETLOAD", StringComparison.OrdinalIgnoreCase) || 
@@ -490,13 +516,9 @@ namespace BatchProcessor
                                              data.StartsWith("Redirect stdout") ||
                                              string.IsNullOrWhiteSpace(data);
                         
-                        // Only show important output or errors (but skip if already shown above)
-                        if (!isVerboseNoise && !data.Contains("NETLOAD", StringComparison.OrdinalIgnoreCase) && !data.Contains("[Loading]", StringComparison.OrdinalIgnoreCase))
-                        {
-                            // Show all non-noise output without prefix (separator already shows which drawing)
-                            Console.WriteLine($"  {e.Data}");
-                        }
-                        // Skip verbose noise entirely
+                        // Disable AutoCAD logs - only show critical errors
+                        // Skip all AutoCAD output (user requested to disable AutoCAD logs)
+                        // Only errors are shown above (DLL load errors, command not found, etc.)
                     }
                 };
 
@@ -511,11 +533,12 @@ namespace BatchProcessor
                 };
 
                 process.Start();
+                processStarted = true; // Mark that process was successfully started
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
                 
-                // Log process start for monitoring
-                Console.WriteLine($"  ▶ Process started (PID: {process.Id})");
+                // Disable AutoCAD logs - suppress process start message
+                // (user requested to disable AutoCAD logs)
 
                 // Add timeout to prevent hanging (6 minutes max per drawing)
                 // IMPORTANT: Without proper timeout and cleanup, processes can hang indefinitely,
@@ -548,6 +571,9 @@ namespace BatchProcessor
                                 {
                                     Console.WriteLine($"  ⚠️  WARNING: Process did not exit after kill - forcing termination");
                                 }
+                                Console.WriteLine($"  ⏱️  REASON: AutoCAD process exceeded 6-minute timeout limit");
+                                Console.WriteLine($"  ⏱️  REASON: Process may be hung or taking too long to initialize");
+                                Console.WriteLine($"  ❌ RESULT: File marked as NON-PROCESSED (process killed before completion)");
                                 result.ErrorMessage = "Process timed out after 6 minutes";
                                 result.WasProcessed = false; // Mark as not processed due to timeout
                             }
@@ -640,14 +666,35 @@ namespace BatchProcessor
                 result.Duration = result.EndTime - result.StartTime;
                 
                 // Get exit code and output before disposing
-                int exitCode = process.HasExited ? process.ExitCode : -1;
+                // Handle case where process object may be disposed/invalid
+                int exitCode = -1;
+                bool processExited = false;
+                try
+                {
+                    processExited = process.HasExited;
+                    if (processExited)
+                    {
+                        exitCode = process.ExitCode;
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+                    // "No process is associated with this object" - process was disposed
+                    // But process WAS started, so mark as processed
+                    Console.WriteLine($"  ⚠️  WARNING: Cannot access process properties: {ex.Message}");
+                    Console.WriteLine($"  📋 REASON: Process object is no longer associated (may have been disposed)");
+                    Console.WriteLine($"  📋 REASON: Process was started but status cannot be determined");
+                    processExited = true; // Assume exited since we can't check
+                    exitCode = -1; // Unknown exit code
+                }
+                
                 result.ExitCode = exitCode;
                 result.Output = outputBuilder.ToString();
                 
                 // Log process completion status for monitoring
-                if (process.HasExited)
+                if (processExited)
                 {
-                    Console.WriteLine($"  ✓ Process exited successfully (Exit Code: {exitCode}, Duration: {result.Duration.TotalSeconds:F1}s)");
+                    Console.WriteLine($"  ✓ Process exited (Exit Code: {exitCode}, Duration: {result.Duration.TotalSeconds:F1}s)");
                 }
                 else
                 {
@@ -700,6 +747,29 @@ namespace BatchProcessor
                 // Only mark as failed if we actually detected an error in the output
                 // (We can't verify success without LISP messages, but AutoCAD will show errors if NETLOAD fails)
                 result.UIPluginLoadFailed = uiPluginLoadFailed;
+                
+                // Check for command not found - mark as not processed
+                if (commandNotFound)
+                {
+                    Console.WriteLine($"  ❌ Command '{_mainCommand}' not found - marking file as not processed");
+                    Console.WriteLine($"  📋 REASON: AutoCAD command '{_mainCommand}' is not recognized");
+                    Console.WriteLine($"  📋 REASON: Command may not be loaded or registered in AutoCAD");
+                    Console.WriteLine($"  📋 REASON: Check if DLLs are loaded correctly (CommonUtils.dll, etc.)");
+                    Console.WriteLine($"  📋 REASON: Check if command name is correct in appsettings.json");
+                    Console.WriteLine($"  ❌ RESULT: File marked as NON-PROCESSED (command execution never started)");
+                    result.WasProcessed = false; // Not processed - command doesn't exist
+                    result.Success = false;
+                    result.ErrorMessage = $"Command not found: {commandNotFoundMessage ?? _mainCommand}";
+                    result.EndTime = DateTime.Now;
+                    result.Duration = result.EndTime - result.StartTime;
+                    Console.WriteLine();
+                    Console.WriteLine($"{new string('─', 80)}");
+                    Console.WriteLine($"  ❌ COMMAND NOT FOUND: {result.DrawingName}");
+                    Console.WriteLine($"     Error: {result.ErrorMessage}");
+                    Console.WriteLine($"{new string('═', 80)}");
+                    Console.WriteLine();
+                    return result; // Return early - don't check for output files
+                }
                 
                 // Check for DLL loading errors
                 if (dllLoadErrors.Count > 0)
@@ -828,9 +898,16 @@ namespace BatchProcessor
                     }
                     
                     // Log exit code for debugging if non-zero
-                    if (process.ExitCode != 0)
+                    try
                     {
-                        Console.WriteLine($"     Exit Code: {process.ExitCode}");
+                        if (process.HasExited && process.ExitCode != 0)
+                        {
+                            Console.WriteLine($"     Exit Code: {process.ExitCode}");
+                        }
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Process object no longer valid - ignore
                     }
                 }
                 Console.WriteLine($"{new string('═', 80)}");
@@ -838,15 +915,30 @@ namespace BatchProcessor
             }
             catch (Exception ex)
             {
+                // Check if process was started - if so, mark as processed (even if it failed)
+                // Use the processStarted flag to determine if process was actually started
+                bool wasProcessStarted = processStarted;
+                
                 result.Success = false;
-                result.WasProcessed = false; // Not processed - exception before/during AutoCAD
+                result.WasProcessed = wasProcessStarted; // Mark as processed if process was started
                 result.ErrorMessage = ex.Message;
                 result.EndTime = DateTime.Now;
                 result.Duration = result.EndTime - result.StartTime;
+                
                 Console.WriteLine();
                 Console.WriteLine($"{new string('─', 80)}");
                 Console.WriteLine($"  ❌ EXCEPTION: {result.DrawingName}");
                 Console.WriteLine($"     Error: {ex.Message}");
+                if (wasProcessStarted)
+                {
+                    Console.WriteLine($"     📋 REASON: Process was started but exception occurred during/after execution");
+                    Console.WriteLine($"     📋 RESULT: File marked as FAILED (processed but failed)");
+                }
+                else
+                {
+                    Console.WriteLine($"     📋 REASON: Exception occurred before process could start");
+                    Console.WriteLine($"     📋 RESULT: File marked as NON-PROCESSED (AutoCAD never started)");
+                }
                 Console.WriteLine($"{new string('═', 80)}");
                 Console.WriteLine();
             }
@@ -991,15 +1083,19 @@ namespace BatchProcessor
 
             if (nonProcessed > 0)
             {
-                Console.WriteLine($"\n  Non-Processed Files (errors before processing):");
+                Console.WriteLine($"\n  ⚠️  NON-PROCESSED FILES (errors before AutoCAD processing started):");
+                Console.WriteLine($"  {new string('─', 64)}");
                 foreach (var result in results.Where(r => !r.Success && !r.WasProcessed))
                 {
-                    Console.WriteLine($"    - {result.DrawingName}");
+                    Console.WriteLine($"\n    📄 File: {result.DrawingName}");
                     if (!string.IsNullOrEmpty(result.ErrorMessage))
                     {
-                        Console.WriteLine($"      Error: {result.ErrorMessage}");
+                        Console.WriteLine($"    ❌ Error: {result.ErrorMessage}");
                     }
+                    Console.WriteLine($"    ⏱️  Duration: {result.Duration.TotalSeconds:F1}s (before failure)");
+                    Console.WriteLine($"    📋 Status: NON-PROCESSED (AutoCAD never executed command)");
                 }
+                Console.WriteLine($"\n  {new string('─', 64)}");
             }
 
             Console.WriteLine($"\n{new string('═', 64)}\n");
@@ -1023,7 +1119,7 @@ namespace BatchProcessor
 
     public class ProcessingSummary
     {
-        public List<string> FailedFiles { get; set; } = new List<string>(); // Processed but validation failed (has JSON)
+        public List<string> FailedFiles { get; set; } = new List<string>(); // Processed but validation failed (has JSON) - stores full file paths
         public List<string> NonProcessedFiles { get; set; } = new List<string>(); // Not processed (errors before AutoCAD)
         public Dictionary<string, string> NonProcessedFilesWithErrors { get; set; } = new Dictionary<string, string>(); // File name -> error message
         public bool UIPluginLoadFailed { get; set; } // True if UIPlugin.dll failed to load in any drawing

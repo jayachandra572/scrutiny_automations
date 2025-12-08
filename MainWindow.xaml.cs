@@ -26,6 +26,7 @@ namespace BatchProcessor
         private Task<ProcessingSummary>? _currentProcessingTask;
         private int _totalFiles = 0;
         private int _completedFiles = 0;
+        private DateTime? _processingStartTime = null;
         
         // Timer tracking for active files
         private Dictionary<string, DateTime> _fileStartTimes = new Dictionary<string, DateTime>();
@@ -273,61 +274,7 @@ namespace BatchProcessor
         
         private void LoadCommandsFromAppSettings()
         {
-            try
-            {
-                var appSettings = LoadAppSettings();
-                if (appSettings != null && appSettings.AvailableCommands != null && appSettings.AvailableCommands.Count > 0)
-                {
-                    // Clear existing items
-                    CmbCommand.Items.Clear();
-                    
-                    // Add commands from appsettings.json
-                    foreach (var cmd in appSettings.AvailableCommands)
-                    {
-                        var item = new ComboBoxItem { Content = cmd };
-                        CmbCommand.Items.Add(item);
-                    }
-                    
-                    // Select the main command or first one
-                    if (CmbCommand.Items.Count > 0)
-                    {
-                        bool found = false;
-                        if (!string.IsNullOrEmpty(appSettings.MainCommand))
-                        {
-                            foreach (ComboBoxItem item in CmbCommand.Items)
-                            {
-                                if (item.Content.ToString() == appSettings.MainCommand)
-                                {
-                                    item.IsSelected = true;
-                                    found = true;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        // If main command not found, select first item
-                        if (!found)
-                        {
-                            CmbCommand.SelectedIndex = 0;
-                        }
-                    }
-                }
-                else
-                {
-                    // Fallback: add default commands if appsettings.json is missing or empty
-                    CmbCommand.Items.Clear();
-                    CmbCommand.Items.Add(new ComboBoxItem { Content = "RunPreScrutinyValidationsBatch", IsSelected = true });
-                    CmbCommand.Items.Add(new ComboBoxItem { Content = "ExtractScrutinyMetricsBatch" });
-                }
-            }
-            catch (Exception ex)
-            {
-                // Fallback: add default commands on error
-                CmbCommand.Items.Clear();
-                CmbCommand.Items.Add(new ComboBoxItem { Content = "RunPreScrutinyValidationsBatch", IsSelected = true });
-                CmbCommand.Items.Add(new ComboBoxItem { Content = "ExtractScrutinyMetricsBatch" });
-                LogMessage($"Could not load commands from appsettings.json: {ex.Message}");
-            }
+            // Command is fixed to "RunPreScrutinyValidationsBatch" - no need to load from settings
         }
 
         #region Browse Buttons
@@ -376,24 +323,11 @@ namespace BatchProcessor
             }
         }
 
+        // Only CommonUtils DLL is required for Pre Scrutiny Validations
+
         private void BtnBrowseCommonUtils_Click(object sender, RoutedEventArgs e)
         {
             BrowseForDll(TxtCommonUtilsDll, "Select CommonUtils.dll");
-        }
-
-        private void BtnBrowseNewtonsoft_Click(object sender, RoutedEventArgs e)
-        {
-            BrowseForDll(TxtNewtonsoftDll, "Select Newtonsoft.Json.dll");
-        }
-
-        private void BtnBrowseCrxApp_Click(object sender, RoutedEventArgs e)
-        {
-            BrowseForDll(TxtCrxAppDll, "Select CrxApp.dll");
-        }
-
-        private void BtnBrowseUIPlugin_Click(object sender, RoutedEventArgs e)
-        {
-            BrowseForDll(TxtUIPluginDll, "Select UIPlugin.dll");
         }
 
         private void BtnBrowseAutoCAD_Click(object sender, System.Windows.RoutedEventArgs e)
@@ -475,34 +409,6 @@ namespace BatchProcessor
             }
         }
 
-        private void BtnLoadDefaults_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                // Load from appsettings.json
-                var appSettings = LoadAppSettings();
-                if (appSettings != null)
-                {
-                    TxtAutoCADPath.Text = appSettings.AutoCADPath ?? "";
-                    
-                    if (appSettings.DllsToLoad != null && appSettings.DllsToLoad.Count >= 3)
-                    {
-                        TxtCommonUtilsDll.Text = appSettings.DllsToLoad[0];
-                        TxtNewtonsoftDll.Text = appSettings.DllsToLoad[1];
-                        TxtCrxAppDll.Text = appSettings.DllsToLoad[2];
-                    }
-
-                    TxtMaxParallel.Text = appSettings.MaxParallelProcesses.ToString();
-                    ChkVerbose.IsChecked = appSettings.EnableVerboseLogging;
-
-                    WpfMessageBox.Show("Default settings loaded from appsettings.json", "Success", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
-                }
-            }
-            catch (Exception ex)
-            {
-                WpfMessageBox.Show($"Error loading defaults: {ex.Message}", "Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
-            }
-        }
 
         private void SaveUserSettings()
         {
@@ -512,11 +418,8 @@ namespace BatchProcessor
                 OutputFolder = TxtOutputFolder.Text,
                 CsvFile = TxtCsvFile.Text,
                 CommonUtilsDll = TxtCommonUtilsDll.Text,
-                NewtonsoftDll = TxtNewtonsoftDll.Text,
-                CrxAppDll = TxtCrxAppDll.Text,
-                UIPluginDll = TxtUIPluginDll.Text,
                 AutoCADPath = TxtAutoCADPath.Text,
-                SelectedCommand = (CmbCommand.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "RunPreScrutinyValidationsBatch",
+                SelectedCommand = "RunPreScrutinyValidationsBatch", // Fixed command
                 MaxParallel = int.TryParse(TxtMaxParallel.Text, out int mp) ? mp : 4,
                 VerboseLogging = ChkVerbose.IsChecked ?? false
             };
@@ -540,22 +443,10 @@ namespace BatchProcessor
                         TxtOutputFolder.Text = settings.OutputFolder ?? "";
                         TxtCsvFile.Text = settings.CsvFile ?? "";
                         TxtCommonUtilsDll.Text = settings.CommonUtilsDll ?? "";
-                        TxtNewtonsoftDll.Text = settings.NewtonsoftDll ?? "";
-                        TxtCrxAppDll.Text = settings.CrxAppDll ?? "";
-                        TxtUIPluginDll.Text = settings.UIPluginDll ?? "";
                         TxtAutoCADPath.Text = settings.AutoCADPath ?? "";
                         TxtMaxParallel.Text = settings.MaxParallel.ToString();
                         ChkVerbose.IsChecked = settings.VerboseLogging;
-
-                        // Set command selection
-                        foreach (ComboBoxItem item in CmbCommand.Items)
-                        {
-                            if (item.Content.ToString() == settings.SelectedCommand)
-                            {
-                                CmbCommand.SelectedItem = item;
-                                break;
-                            }
-                        }
+                        // Command is fixed to "RunPreScrutinyValidationsBatch" - no selection needed
 
                         LogMessage("Previous settings loaded successfully");
                     }
@@ -583,32 +474,16 @@ namespace BatchProcessor
                 {
                     TxtAutoCADPath.Text = appSettings.AutoCADPath ?? "";
                     
-                    if (appSettings.DllsToLoad != null && appSettings.DllsToLoad.Count >= 3)
+                    // Load CommonUtils DLL from appsettings.json
+                    if (appSettings.DllsToLoad != null)
                     {
-                        TxtCommonUtilsDll.Text = appSettings.DllsToLoad[0];
-                        TxtNewtonsoftDll.Text = appSettings.DllsToLoad[1];
-                        TxtCrxAppDll.Text = appSettings.DllsToLoad[2];
-                        
-                        // Check if UIPlugin DLL is in the list (4th position or find by name)
-                        if (appSettings.DllsToLoad.Count >= 4)
+                        // Find CommonUtils DLL in the list
+                        foreach (var dll in appSettings.DllsToLoad)
                         {
-                            // Check if 4th DLL is UIPlugin
-                            string dll4 = appSettings.DllsToLoad[3];
-                            if (dll4.Contains("UIPlugin", StringComparison.OrdinalIgnoreCase))
+                            if (dll.Contains("CommonUtils", StringComparison.OrdinalIgnoreCase))
                             {
-                                TxtUIPluginDll.Text = dll4;
-                            }
-                        }
-                        else
-                        {
-                            // Try to find UIPlugin in any position
-                            foreach (var dll in appSettings.DllsToLoad)
-                            {
-                                if (dll.Contains("UIPlugin", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    TxtUIPluginDll.Text = dll;
-                                    break;
-                                }
+                                TxtCommonUtilsDll.Text = dll;
+                                break;
                             }
                         }
                     }
@@ -690,9 +565,12 @@ namespace BatchProcessor
                 {
                     _cancellationTokenSource?.Dispose();
                     _currentProcessingTask = null;
-                    BtnRun.Content = "▶ Run Batch Processing";
+                    BtnRun.Content = "▶ Run Pre Scrutiny Validations";
                     TxtStatus.Text = "Processing cancelled";
+                    TxtExecutionTime.Visibility = Visibility.Collapsed;
+                    TxtExecutionTime.Text = "";
                     ClearAllFileTimers();
+                    _processingStartTime = null;
                 }
                 return; // Exit after cancelling
             }
@@ -710,9 +588,12 @@ namespace BatchProcessor
             // BtnRun.IsEnabled = false; // REMOVED - keep button enabled
             BtnRun.Content = "⏹ Stop Processing";
             TxtStatus.Text = "Processing...";
+            TxtExecutionTime.Visibility = Visibility.Collapsed;
+            TxtExecutionTime.Text = "";
             TxtLog.Clear();
             _completedFiles = 0;
             _totalFiles = 0;
+            _processingStartTime = DateTime.Now;
 
             try
             {
@@ -721,25 +602,16 @@ namespace BatchProcessor
                 string outputFolder = TxtOutputFolder.Text;
                 string csvFile = TxtCsvFile.Text;
                 string configFile = ""; // No config file - CSV provides all parameters
-                string command = (CmbCommand.SelectedItem as ComboBoxItem)?.Content.ToString() ?? "RunPreScrutinyValidationsBatch";
+                // Fixed command for Pre Scrutiny Validations
+                string command = "RunPreScrutinyValidationsBatch";
                 int maxParallel = int.Parse(TxtMaxParallel.Text);
                 bool verbose = ChkVerbose.IsChecked ?? false;
 
                 var dllsToLoad = new List<string>();
                 
-                // Load dependencies first (CommonUtils and Newtonsoft.Json)
+                // Only load CommonUtils DLL (required)
                 dllsToLoad.Add(TxtCommonUtilsDll.Text);
-                dllsToLoad.Add(TxtNewtonsoftDll.Text);
-                
-                // Load UIPlugin DLL (if provided) - no automatic dependency loading
-                if (!string.IsNullOrWhiteSpace(TxtUIPluginDll.Text))
-                {
-                    dllsToLoad.Add(TxtUIPluginDll.Text);
-                    LogMessage($"✅ UIPlugin.dll will be loaded: {Path.GetFileName(TxtUIPluginDll.Text)}");
-                }
-                
-                // Load CrxApp DLL last (depends on CommonUtils and Newtonsoft.Json)
-                dllsToLoad.Add(TxtCrxAppDll.Text);
+                LogMessage($"✅ CommonUtils.dll will be loaded: {Path.GetFileName(TxtCommonUtilsDll.Text)}");
 
                 LogMessage("═══════════════════════════════════════════════════════════════");
                 LogMessage($"Starting batch processing with {command}");
@@ -804,14 +676,15 @@ namespace BatchProcessor
                             // Restore text box writer
                             Console.SetOut(textBoxWriter);
                             
-                            if (result == MessageBoxResult.No)
-                            {
-                                LogMessage("\n❌ Processing cancelled by user due to missing parameters.");
-                                BtnRun.Content = "▶ Run Batch Processing";
-                                TxtStatus.Text = "Processing cancelled - files missing parameters";
-                                Console.SetOut(originalOut);
-                                return;
-                            }
+                if (result == MessageBoxResult.No)
+                {
+                    LogMessage("\n❌ Processing cancelled by user due to missing parameters.");
+                    BtnRun.Content = "▶ Run Pre Scrutiny Validations";
+                    TxtStatus.Text = "Processing cancelled - files missing parameters";
+                    Console.SetOut(originalOut);
+                    _processingStartTime = null;
+                    return;
+                }
                             
                             LogMessage("\n✅ Continuing with processing (files without parameters will be skipped)...");
                         }
@@ -869,23 +742,32 @@ namespace BatchProcessor
                     
                     var summary = await _currentProcessingTask;
                     
-                    // Check if UIPlugin.dll failed to load and show alert
-                    if (summary.UIPluginLoadFailed && !string.IsNullOrWhiteSpace(TxtUIPluginDll.Text))
+                    // Check if CommonUtils.dll failed to load and show alert
+                    if (summary.UIPluginLoadFailed && !string.IsNullOrWhiteSpace(TxtCommonUtilsDll.Text))
                     {
                         WpfMessageBox.Show(
-                            "UIPlugin.dll failed to load!\n\n" +
-                            "This may cause UIPlugin commands to be unavailable.\n\n" +
+                            "CommonUtils.dll failed to load!\n\n" +
+                            "This may cause commands to be unavailable.\n\n" +
                             "Please check:\n" +
-                            "1. UIPlugin.dll path is correct\n" +
+                            "1. CommonUtils.dll path is correct\n" +
                             "2. All required dependencies are available\n" +
                             "3. Check the log output for detailed error messages",
-                            "UIPlugin.dll Load Failed",
+                            "CommonUtils.dll Load Failed",
                             WpfMessageBoxButton.OK,
                             WpfMessageBoxImage.Warning);
                     }
 
                     // Button stays enabled, just update status
                     // BtnRun.IsEnabled = true; // REMOVED - button stays enabled
+
+                    // Calculate and display total execution time
+                    if (_processingStartTime.HasValue)
+                    {
+                        var totalDuration = DateTime.Now - _processingStartTime.Value;
+                        string timeString = FormatDuration(totalDuration);
+                        TxtExecutionTime.Text = $"⏱️ Total Execution Time: {timeString}";
+                        TxtExecutionTime.Visibility = Visibility.Visible;
+                    }
 
                     // Display failed files and non-processed files
                     DisplayFailedFiles(summary.FailedFiles);
@@ -925,7 +807,16 @@ namespace BatchProcessor
                 {
                     TxtStatus.Text = "❌ Processing cancelled";
                     LogMessage("\n❌ Processing was cancelled by user.");
-                    BtnRun.Content = "▶ Run Batch Processing";
+                    BtnRun.Content = "▶ Run Pre Scrutiny Validations";
+                    
+                    // Show execution time even if cancelled
+                    if (_processingStartTime.HasValue)
+                    {
+                        var totalDuration = DateTime.Now - _processingStartTime.Value;
+                        string timeString = FormatDuration(totalDuration);
+                        TxtExecutionTime.Text = $"⏱️ Execution Time (Cancelled): {timeString}";
+                        TxtExecutionTime.Visibility = Visibility.Visible;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -933,7 +824,7 @@ namespace BatchProcessor
                     TxtStatus.Text = "Error occurred";
                     LogMessage($"\n❌ Error: {ex.Message}");
                     WpfMessageBox.Show($"Error during processing:\n{ex.Message}", "Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
-                    BtnRun.Content = "▶ Run Batch Processing";
+                    BtnRun.Content = "▶ Run Pre Scrutiny Validations";
                 }
                 finally
                 {
@@ -943,7 +834,7 @@ namespace BatchProcessor
                     // Reset button state on UI thread
                     Dispatcher.Invoke(() =>
                     {
-                        BtnRun.Content = "▶ Run Batch Processing";
+                        BtnRun.Content = "▶ Run Pre Scrutiny Validations";
                         if (TxtStatus.Text.Contains("Processing..."))
                         {
                             TxtStatus.Text = "Ready";
@@ -958,7 +849,7 @@ namespace BatchProcessor
                 TxtStatus.Text = "Error occurred";
                 LogMessage($"\n❌ Error: {ex.Message}");
                 WpfMessageBox.Show($"Error during processing:\n{ex.Message}", "Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
-                BtnRun.Content = "▶ Run Batch Processing";
+                BtnRun.Content = "▶ Run Pre Scrutiny Validations";
             }
             finally
             {
@@ -966,8 +857,9 @@ namespace BatchProcessor
                 _currentProcessingTask = null;
                 _cancellationTokenSource?.Dispose();
                 _cancellationTokenSource = null;
-                BtnRun.Content = "▶ Run Batch Processing";
+                BtnRun.Content = "▶ Run Pre Scrutiny Validations";
                 ClearAllFileTimers();
+                _processingStartTime = null;
             }
         }
 
@@ -1006,26 +898,10 @@ namespace BatchProcessor
             }
 
             // Validate DLLs
+            // Validate CommonUtils DLL (required)
             if (string.IsNullOrWhiteSpace(TxtCommonUtilsDll.Text) || !File.Exists(TxtCommonUtilsDll.Text))
             {
                 WpfMessageBox.Show("Please select a valid CommonUtils.dll file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
-            }
-            if (string.IsNullOrWhiteSpace(TxtNewtonsoftDll.Text) || !File.Exists(TxtNewtonsoftDll.Text))
-            {
-                WpfMessageBox.Show("Please select a valid Newtonsoft.Json.dll file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
-            }
-            if (string.IsNullOrWhiteSpace(TxtCrxAppDll.Text) || !File.Exists(TxtCrxAppDll.Text))
-            {
-                WpfMessageBox.Show("Please select a valid CrxApp.dll file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
-            }
-
-            // Validate UIPlugin DLL (optional - only if provided)
-            if (!string.IsNullOrWhiteSpace(TxtUIPluginDll.Text) && !File.Exists(TxtUIPluginDll.Text))
-            {
-                WpfMessageBox.Show("UIPlugin.dll file does not exist. Please select a valid file or leave it empty.", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                 return false;
             }
 
@@ -1063,6 +939,22 @@ namespace BatchProcessor
             }
 
             return true;
+        }
+
+        private string FormatDuration(TimeSpan duration)
+        {
+            if (duration.TotalHours >= 1)
+            {
+                return $"{(int)duration.TotalHours}h {duration.Minutes}m {duration.Seconds}s";
+            }
+            else if (duration.TotalMinutes >= 1)
+            {
+                return $"{duration.Minutes}m {duration.Seconds}s";
+            }
+            else
+            {
+                return $"{duration.Seconds}s";
+            }
         }
 
         #endregion
@@ -1139,29 +1031,112 @@ namespace BatchProcessor
             // Show the failed files section
             GrpFailedFiles.Visibility = Visibility.Visible;
 
-            // Add header
+            // Add header with count
             var header = new TextBlock
             {
-                Text = $"Total Validation Failures: {failedFiles.Count}",
+                Text = $"❌ Total Failed Files: {failedFiles.Count}",
                 FontWeight = FontWeights.Bold,
-                FontSize = 12,
+                FontSize = 13,
                 Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red),
-                Margin = new Thickness(0, 0, 0, 10)
+                Margin = new Thickness(0, 0, 0, 10),
+                Padding = new Thickness(5)
             };
             StkFailedFiles.Children.Add(header);
 
-            // Add each failed file
-            foreach (var fileName in failedFiles)
+            // Add separator
+            var separator = new Border
             {
-                var fileBlock = new TextBlock
+                Height = 1,
+                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.LightGray),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            StkFailedFiles.Children.Add(separator);
+
+            // Add each failed file with better formatting and copy functionality
+            foreach (var filePath in failedFiles)
+            {
+                // Extract just the file name from the full path
+                string fileName = Path.GetFileName(filePath);
+                
+                var fileGrid = new Grid
                 {
-                    Text = $"  ❌ {fileName}",
+                    Margin = new Thickness(5, 3, 5, 3)
+                };
+                fileGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                fileGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                fileGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var iconBlock = new TextBlock
+                {
+                    Text = "❌",
+                    FontSize = 12,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(iconBlock, 0);
+
+                // Display just the file name, but store full path for copying
+                var fileNameBox = new System.Windows.Controls.TextBox
+                {
+                    Text = fileName,
                     FontFamily = new System.Windows.Media.FontFamily("Consolas"),
                     FontSize = 11,
-                    Margin = new Thickness(5, 2, 0, 2),
-                    TextWrapping = TextWrapping.Wrap
+                    TextWrapping = TextWrapping.Wrap,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.DarkRed),
+                    Background = System.Windows.Media.Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    IsReadOnly = true,
+                    Cursor = System.Windows.Input.Cursors.IBeam,
+                    Padding = new Thickness(2),
+                    Margin = new Thickness(0, 0, 5, 0),
+                    ToolTip = $"Full path: {filePath}" // Show full path in tooltip
                 };
-                StkFailedFiles.Children.Add(fileBlock);
+                Grid.SetColumn(fileNameBox, 1);
+
+                // Add copy button - copies full path to clipboard
+                var copyButton = new System.Windows.Controls.Button
+                {
+                    Content = "📋",
+                    Width = 30,
+                    Height = 25,
+                    FontSize = 12,
+                    Padding = new Thickness(0),
+                    Margin = new Thickness(5, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = "Copy full file path to clipboard",
+                    Cursor = System.Windows.Input.Cursors.Hand
+                };
+                copyButton.Click += (s, e) =>
+                {
+                    try
+                    {
+                        System.Windows.Clipboard.SetText(filePath); // Copy full path
+                        copyButton.Content = "✓";
+                        copyButton.Foreground = System.Windows.Media.Brushes.Green;
+                        System.Windows.Threading.DispatcherTimer timer = new System.Windows.Threading.DispatcherTimer
+                        {
+                            Interval = TimeSpan.FromSeconds(2)
+                        };
+                        timer.Tick += (sender, args) =>
+                        {
+                            copyButton.Content = "📋";
+                            copyButton.Foreground = System.Windows.Media.Brushes.Black;
+                            timer.Stop();
+                        };
+                        timer.Start();
+                    }
+                    catch (Exception ex)
+                    {
+                        WpfMessageBox.Show($"Failed to copy to clipboard: {ex.Message}", "Copy Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
+                    }
+                };
+                Grid.SetColumn(copyButton, 2);
+
+                fileGrid.Children.Add(iconBlock);
+                fileGrid.Children.Add(fileNameBox);
+                fileGrid.Children.Add(copyButton);
+                StkFailedFiles.Children.Add(fileGrid);
             }
         }
 
@@ -1457,9 +1432,6 @@ namespace BatchProcessor
         public string? OutputFolder { get; set; }
         public string? CsvFile { get; set; }
         public string? CommonUtilsDll { get; set; }
-        public string? NewtonsoftDll { get; set; }
-        public string? CrxAppDll { get; set; }
-        public string? UIPluginDll { get; set; }
         public string? AutoCADPath { get; set; }
         public string? SelectedCommand { get; set; }
         public int MaxParallel { get; set; } = 4;
