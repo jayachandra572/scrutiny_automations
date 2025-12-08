@@ -1,4 +1,5 @@
 using System.Windows;
+using BatchProcessor.JsonDiff;
 
 namespace BatchProcessor
 {

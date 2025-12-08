@@ -4,12 +4,12 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using BatchProcessor.Models;
+using BatchProcessor.JsonDiff.Models;
 // using JsonDiffPatch; // Temporarily disabled - package reference issue
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace BatchProcessor
+namespace BatchProcessor.JsonDiff
 {
     public class JsonDiffComparer
     {

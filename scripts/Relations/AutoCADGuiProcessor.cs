@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Windows.Automation;
 using System.Windows.Forms;
 
-namespace BatchProcessor
+namespace BatchProcessor.Relations
 {
     /// <summary>
     /// Results from batch processing multiple drawings

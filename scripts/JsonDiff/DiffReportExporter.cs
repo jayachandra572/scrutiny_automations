@@ -3,9 +3,9 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
-using BatchProcessor.Models;
+using BatchProcessor.JsonDiff.Models;
 
-namespace BatchProcessor
+namespace BatchProcessor.JsonDiff
 {
     public class DiffReportExporter
     {

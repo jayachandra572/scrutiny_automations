@@ -8,6 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using BatchProcessor.PreScrutiny;
+using BatchProcessor.Relations;
+using BatchProcessor.JsonDiff;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfMessageBoxButton = System.Windows.MessageBoxButton;
 using WpfMessageBoxImage = System.Windows.MessageBoxImage;
@@ -20,7 +23,7 @@ namespace BatchProcessor
 {
     public partial class MainWindow : Window
     {
-        private const string UserSettingsFile = "user_settings.json";
+        private const string UserSettingsFile = "Settings/user_settings.json";
         private bool _isNavigatingBack = false;
         private CancellationTokenSource? _cancellationTokenSource;
         private Task<ProcessingSummary>? _currentProcessingTask;

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace BatchProcessor.Models
+namespace BatchProcessor.JsonDiff.Models
 {
     public class JsonDiffResult
     {

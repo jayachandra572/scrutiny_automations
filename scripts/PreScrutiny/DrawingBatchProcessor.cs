@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace BatchProcessor
+namespace BatchProcessor.PreScrutiny
 {
     /// <summary>
     /// Processes multiple AutoCAD drawing files in parallel using accoreconsole.exe

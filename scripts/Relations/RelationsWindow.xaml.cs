@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using BatchProcessor;
+using BatchProcessor.JsonDiff;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfMessageBoxButton = System.Windows.MessageBoxButton;
 using WpfMessageBoxImage = System.Windows.MessageBoxImage;
@@ -15,11 +17,11 @@ using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WinFormsFolderBrowser = System.Windows.Forms.FolderBrowserDialog;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
 
-namespace BatchProcessor
+namespace BatchProcessor.Relations
 {
     public partial class RelationsWindow : Window
     {
-        private const string UserSettingsFile = "user_settings_relations.json";
+        private const string UserSettingsFile = "Settings/user_settings_relations.json";
         private bool _isNavigatingBack = false;
         private CancellationTokenSource? _cancellationTokenSource;
         private Task? _currentProcessingTask;

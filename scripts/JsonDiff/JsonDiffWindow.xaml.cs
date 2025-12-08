@@ -5,18 +5,19 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using BatchProcessor.Models;
+using BatchProcessor.JsonDiff.Models;
+using BatchProcessor.Relations;
 using WpfMessageBox = System.Windows.MessageBox;
 using WpfMessageBoxButton = System.Windows.MessageBoxButton;
 using WpfMessageBoxImage = System.Windows.MessageBoxImage;
 using WinFormsFolderBrowser = System.Windows.Forms.FolderBrowserDialog;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
 
-namespace BatchProcessor
+namespace BatchProcessor.JsonDiff
 {
     public partial class JsonDiffWindow : Window
     {
-        private const string UserSettingsFile = "user_settings_diff.json";
+        private const string UserSettingsFile = "Settings/user_settings_diff.json";
         private JsonDiffComparer? _comparer;
         private DiffReportExporter? _exporter;
         private bool _isNavigatingBack = false;

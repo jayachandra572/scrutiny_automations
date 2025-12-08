@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 
-namespace BatchProcessor
+namespace BatchProcessor.PreScrutiny
 {
     /// <summary>
     /// Maps CSV file data to drawing-specific application parameters

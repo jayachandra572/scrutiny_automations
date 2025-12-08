@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
-namespace BatchProcessor
+namespace BatchProcessor.PreScrutiny
 {
     /// <summary>
     /// Maps CSV data to ApplicationParameters.Parameters class
