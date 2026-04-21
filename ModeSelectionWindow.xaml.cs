@@ -6,7 +6,8 @@ namespace BatchProcessor
     {
         public enum SelectedMode
         {
-            CommandsExecution,
+            PreScrutinyValidations,
+            ScrutinyReports,
             JsonDiffComparison,
             RelationsCreation
         }
@@ -22,7 +23,7 @@ namespace BatchProcessor
 
         private void BtnCommandsMode_Click(object sender, RoutedEventArgs e)
         {
-            SelectMode(SelectedMode.CommandsExecution);
+            SelectMode(SelectedMode.PreScrutinyValidations);
         }
 
         private void BtnDiffMode_Click(object sender, RoutedEventArgs e)
@@ -32,7 +33,7 @@ namespace BatchProcessor
 
         private void Border_CommandsMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            SelectMode(SelectedMode.CommandsExecution);
+            SelectMode(SelectedMode.PreScrutinyValidations);
         }
 
         private void Border_DiffMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -48,6 +49,16 @@ namespace BatchProcessor
         private void Border_RelationsMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             SelectMode(SelectedMode.RelationsCreation);
+        }
+
+        private void BtnReportsMode_Click(object sender, RoutedEventArgs e)
+        {
+            SelectMode(SelectedMode.ScrutinyReports);
+        }
+
+        private void Border_ReportsMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            SelectMode(SelectedMode.ScrutinyReports);
         }
 
         private void SelectMode(SelectedMode mode)

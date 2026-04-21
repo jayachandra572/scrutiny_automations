@@ -16,6 +16,7 @@ using WpfMessageBoxImage = System.Windows.MessageBoxImage;
 using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WinFormsFolderBrowser = System.Windows.Forms.FolderBrowserDialog;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
+using BatchProcessor.Scripts.PreScrutiny;
 
 namespace BatchProcessor.Relations
 {
@@ -463,9 +464,9 @@ namespace BatchProcessor.Relations
                         newWindow = new JsonDiffWindow();
                         break;
 
-                    case ModeSelectionWindow.SelectedMode.CommandsExecution:
+                    case ModeSelectionWindow.SelectedMode.PreScrutinyValidations:
                     default:
-                        newWindow = new MainWindow();
+                        newWindow = new PreScrutinyWindow();
                         break;
                 }
 

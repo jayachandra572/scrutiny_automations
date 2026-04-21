@@ -1,5 +1,7 @@
 using System.Windows;
 using BatchProcessor.JsonDiff;
+using BatchProcessor.Scripts.PreScrutiny;
+using BatchProcessor.Scripts.ScrutinyReports;
 
 namespace BatchProcessor
 {
@@ -10,7 +12,7 @@ namespace BatchProcessor
             // Prevent application from shutting down when main window closes
             // We'll handle shutdown explicitly
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            
+
             // Show mode selection window
             var modeSelectionWindow = new ModeSelectionWindow();
             if (modeSelectionWindow.ShowDialog() == true && modeSelectionWindow.IsModeSelected)
@@ -24,10 +26,15 @@ namespace BatchProcessor
                         mainWindow = new JsonDiffWindow();
                         break;
 
-                    case ModeSelectionWindow.SelectedMode.CommandsExecution:
+                    case ModeSelectionWindow.SelectedMode.ScrutinyReports:
+                        // Open Scrutiny Reports Generation window
+                        mainWindow = new ScrutinyReportsWindow();
+                        break;
+
+                    case ModeSelectionWindow.SelectedMode.PreScrutinyValidations:
                     default:
-                        // Open Commands Execution window (existing MainWindow)
-                        mainWindow = new MainWindow();
+                        // Open Pre Scrutiny Validations window
+                        mainWindow = new PreScrutinyWindow();
                         break;
                 }
 

@@ -12,7 +12,7 @@ using WpfMessageBoxButton = System.Windows.MessageBoxButton;
 using WpfMessageBoxImage = System.Windows.MessageBoxImage;
 using WinFormsFolderBrowser = System.Windows.Forms.FolderBrowserDialog;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
-
+using BatchProcessor.Scripts.PreScrutiny;
 namespace BatchProcessor.JsonDiff
 {
     public partial class JsonDiffWindow : Window
@@ -551,9 +551,9 @@ namespace BatchProcessor.JsonDiff
                         newWindow = new RelationsWindow();
                         break;
 
-                    case ModeSelectionWindow.SelectedMode.CommandsExecution:
+                    case ModeSelectionWindow.SelectedMode.PreScrutinyValidations:
                     default:
-                        newWindow = new MainWindow();
+                        newWindow = new PreScrutinyWindow();
                         break;
                 }
 

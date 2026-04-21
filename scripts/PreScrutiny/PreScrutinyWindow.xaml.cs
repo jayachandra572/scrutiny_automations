@@ -19,9 +19,9 @@ using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WinFormsFolderBrowser = System.Windows.Forms.FolderBrowserDialog;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
 
-namespace BatchProcessor
+namespace BatchProcessor.Scripts.PreScrutiny
 {
-    public partial class MainWindow : Window
+    public partial class PreScrutinyWindow : Window
     {
         private const string UserSettingsFile = "Settings/user_settings.json";
         private bool _isNavigatingBack = false;
@@ -30,23 +30,23 @@ namespace BatchProcessor
         private int _totalFiles = 0;
         private int _completedFiles = 0;
         private DateTime? _processingStartTime = null;
-        
+
         // Timer tracking for active files
         private Dictionary<string, DateTime> _fileStartTimes = new Dictionary<string, DateTime>();
         private System.Windows.Threading.DispatcherTimer? _timerUpdateTimer;
         private Dictionary<string, TextBlock> _timerTextBlocks = new Dictionary<string, TextBlock>();
 
-        public MainWindow()
+        public PreScrutinyWindow()
         {
             InitializeComponent();
             LoadCommandsFromAppSettings();
             LoadUserSettings();
-            
+
             // Initialize timer for updating file timers
             _timerUpdateTimer = new System.Windows.Threading.DispatcherTimer();
             _timerUpdateTimer.Interval = TimeSpan.FromSeconds(1); // Update every second (lightweight - only updates text)
             _timerUpdateTimer.Tick += TimerUpdateTimer_Tick;
-            
+
             // Handle window closing - shutdown app when main window closes (unless navigating back)
             this.Closing += (s, args) =>
             {
@@ -57,12 +57,12 @@ namespace BatchProcessor
                 }
             };
         }
-        
+
         private void TimerUpdateTimer_Tick(object? sender, EventArgs e)
         {
             UpdateActiveFileTimers();
         }
-        
+
         private void UpdateActiveFileTimers()
         {
             if (!Dispatcher.CheckAccess())
@@ -70,7 +70,7 @@ namespace BatchProcessor
                 Dispatcher.Invoke(() => UpdateActiveFileTimers());
                 return;
             }
-            
+
             if (_fileStartTimes.Count == 0)
             {
                 // No active files - clear and hide the group
@@ -79,13 +79,13 @@ namespace BatchProcessor
                 GrpActiveTimers.Visibility = Visibility.Collapsed;
                 return;
             }
-            
+
             // Show the group
             GrpActiveTimers.Visibility = Visibility.Visible;
-            
+
             var now = DateTime.Now;
             var sortedFiles = _fileStartTimes.OrderBy(kvp => kvp.Value).ToList();
-            
+
             // Remove timers for files that are no longer active
             var activeFileNames = new HashSet<string>(sortedFiles.Select(kvp => kvp.Key));
             var filesToRemove = _timerTextBlocks.Keys.Where(k => !activeFileNames.Contains(k)).ToList();
@@ -93,7 +93,7 @@ namespace BatchProcessor
             {
                 _timerTextBlocks.Remove(fileName);
             }
-            
+
             // Update or create timer displays
             for (int i = 0; i < sortedFiles.Count; i++)
             {
@@ -101,7 +101,7 @@ namespace BatchProcessor
                 string fileName = kvp.Key;
                 DateTime startTime = kvp.Value;
                 TimeSpan elapsed = now - startTime;
-                
+
                 // Format time: MM:SS or HH:MM:SS if over an hour
                 string timeString;
                 if (elapsed.TotalHours >= 1)
@@ -112,14 +112,14 @@ namespace BatchProcessor
                 {
                     timeString = $"{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
                 }
-                
+
                 // Check if UI element already exists
                 if (_timerTextBlocks.ContainsKey(fileName))
                 {
                     // OPTIMIZATION: Only update the text and color (much faster than recreating UI)
                     var timerBlock = _timerTextBlocks[fileName];
                     timerBlock.Text = $"⏱️ {timeString}";
-                    
+
                     // Update color based on elapsed time
                     if (elapsed.TotalMinutes >= 6)
                     {
@@ -144,7 +144,7 @@ namespace BatchProcessor
                     };
                     timerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                     timerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                    
+
                     var fileNameBlock = new TextBlock
                     {
                         Text = $"📄 {Path.GetFileNameWithoutExtension(fileName)}",
@@ -156,7 +156,7 @@ namespace BatchProcessor
                         ToolTip = Path.GetFileNameWithoutExtension(fileName)
                     };
                     Grid.SetColumn(fileNameBlock, 0);
-                    
+
                     var timerBlock = new TextBlock
                     {
                         Text = $"⏱️ {timeString}",
@@ -169,7 +169,7 @@ namespace BatchProcessor
                         VerticalAlignment = VerticalAlignment.Center
                     };
                     Grid.SetColumn(timerBlock, 1);
-                    
+
                     // Set initial color
                     if (elapsed.TotalMinutes >= 6)
                     {
@@ -180,10 +180,10 @@ namespace BatchProcessor
                     {
                         timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Orange);
                     }
-                    
+
                     timerGrid.Children.Add(fileNameBlock);
                     timerGrid.Children.Add(timerBlock);
-                    
+
                     // Insert at correct position to maintain sort order
                     if (i < StkActiveTimers.Children.Count)
                     {
@@ -193,11 +193,11 @@ namespace BatchProcessor
                     {
                         StkActiveTimers.Children.Add(timerGrid);
                     }
-                    
+
                     _timerTextBlocks[fileName] = timerBlock;
                 }
             }
-            
+
             // Remove UI elements for files that are no longer active
             for (int i = StkActiveTimers.Children.Count - 1; i >= 0; i--)
             {
@@ -217,7 +217,7 @@ namespace BatchProcessor
                 }
             }
         }
-        
+
         private void StartFileTimer(string fileName)
         {
             if (!Dispatcher.CheckAccess())
@@ -225,18 +225,18 @@ namespace BatchProcessor
                 Dispatcher.Invoke(() => StartFileTimer(fileName));
                 return;
             }
-            
+
             _fileStartTimes[fileName] = DateTime.Now;
-            
+
             // Start the update timer if not already running
             if (_timerUpdateTimer != null && !_timerUpdateTimer.IsEnabled)
             {
                 _timerUpdateTimer.Start();
             }
-            
+
             UpdateActiveFileTimers();
         }
-        
+
         private void StopFileTimer(string fileName)
         {
             if (!Dispatcher.CheckAccess())
@@ -244,23 +244,23 @@ namespace BatchProcessor
                 Dispatcher.Invoke(() => StopFileTimer(fileName));
                 return;
             }
-            
+
             if (_fileStartTimes.ContainsKey(fileName))
             {
                 _fileStartTimes.Remove(fileName);
             }
-            
+
             _timerTextBlocks.Remove(fileName); // Clean up reference
-            
+
             // Stop the update timer if no more active files
             if (_fileStartTimes.Count == 0 && _timerUpdateTimer != null)
             {
                 _timerUpdateTimer.Stop();
             }
-            
+
             UpdateActiveFileTimers();
         }
-        
+
         private void ClearAllFileTimers()
         {
             if (!Dispatcher.CheckAccess())
@@ -268,13 +268,13 @@ namespace BatchProcessor
                 Dispatcher.Invoke(() => ClearAllFileTimers());
                 return;
             }
-            
+
             _fileStartTimes.Clear();
             _timerTextBlocks.Clear(); // Clean up references
             _timerUpdateTimer?.Stop();
             UpdateActiveFileTimers();
         }
-        
+
         private void LoadCommandsFromAppSettings()
         {
             // Command is fixed to "RunPreScrutinyValidationsBatch" - no need to load from settings
@@ -476,7 +476,7 @@ namespace BatchProcessor
                 if (appSettings != null)
                 {
                     TxtAutoCADPath.Text = appSettings.AutoCADPath ?? "";
-                    
+
                     // Load CommonUtils DLL from appsettings.json
                     if (appSettings.DllsToLoad != null)
                     {
@@ -509,7 +509,7 @@ namespace BatchProcessor
                 {
                     var json = File.ReadAllText("appsettings.json");
                     var doc = JsonDocument.Parse(json);
-                    
+
                     if (doc.RootElement.TryGetProperty("BatchProcessorSettings", out JsonElement settingsElement))
                     {
                         return JsonSerializer.Deserialize<Configuration.BatchProcessorSettings>(settingsElement.GetRawText());
@@ -534,19 +534,19 @@ namespace BatchProcessor
             {
                 LogMessage("\n⚠️ Cancelling previous task...");
                 TxtStatus.Text = "Cancelling...";
-                
+
                 // Cancel the token
                 _cancellationTokenSource?.Cancel();
-                
+
                 // Kill all console and AutoCAD processes
                 KillAllConsoleProcesses();
-                
+
                 try
                 {
                     // Wait for task to complete with timeout
                     var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5));
                     var completedTask = await Task.WhenAny(_currentProcessingTask, timeoutTask);
-                    
+
                     if (completedTask == timeoutTask)
                     {
                         LogMessage("⚠️ Task cancellation taking longer than expected...");
@@ -611,7 +611,7 @@ namespace BatchProcessor
                 bool verbose = ChkVerbose.IsChecked ?? false;
 
                 var dllsToLoad = new List<string>();
-                
+
                 // Only load CommonUtils DLL (required)
                 dllsToLoad.Add(TxtCommonUtilsDll.Text);
                 LogMessage($"✅ CommonUtils.dll will be loaded: {Path.GetFileName(TxtCommonUtilsDll.Text)}");
@@ -648,11 +648,11 @@ namespace BatchProcessor
                     if (csvEnabled)
                     {
                         LogMessage($"✅ CSV mapping enabled - each drawing will use its specific parameters");
-                        
+
                         // Validate that all drawings have parameters before processing
                         LogMessage($"\n🔍 Validating drawings have parameters in CSV...");
                         var missingParameterFiles = processor.ValidateDrawingsHaveParameters(inputFolder);
-                        
+
                         if (missingParameterFiles.Count > 0)
                         {
                             LogMessage($"⚠️  Found {missingParameterFiles.Count} drawing file(s) without parameters in CSV:");
@@ -660,13 +660,13 @@ namespace BatchProcessor
                             {
                                 LogMessage($"   - {file}");
                             }
-                            
+
                             // Display missing parameter files
                             DisplayMissingParameterFiles(missingParameterFiles);
-                            
+
                             // Restore console output temporarily for message box
                             Console.SetOut(originalOut);
-                            
+
                             // Ask user if they want to continue
                             var result = WpfMessageBox.Show(
                                 $"⚠️ Found {missingParameterFiles.Count} drawing file(s) without parameters in CSV.\n\n" +
@@ -675,10 +675,10 @@ namespace BatchProcessor
                                 "Missing Parameters",
                                 WpfMessageBoxButton.YesNo,
                                 WpfMessageBoxImage.Warning);
-                            
+
                             // Restore text box writer
                             Console.SetOut(textBoxWriter);
-                            
+
                 if (result == MessageBoxResult.No)
                 {
                     LogMessage("\n❌ Processing cancelled by user due to missing parameters.");
@@ -688,7 +688,7 @@ namespace BatchProcessor
                     _processingStartTime = null;
                     return;
                 }
-                            
+
                             LogMessage("\n✅ Continuing with processing (files without parameters will be skipped)...");
                         }
                         else
@@ -729,7 +729,7 @@ namespace BatchProcessor
                         TxtStatus.Text = $"Processing... {_completedFiles}/{_totalFiles} files completed";
                     });
                 });
-                
+
                 // Clear timers when starting new batch
                 ClearAllFileTimers();
 
@@ -737,14 +737,14 @@ namespace BatchProcessor
                 {
                     // Run processing with cancellation and progress
                     _currentProcessingTask = processor.ProcessFolderAsync(
-                        inputFolder, 
-                        outputFolder, 
-                        configFile, 
-                        cancellationToken, 
+                        inputFolder,
+                        outputFolder,
+                        configFile,
+                        cancellationToken,
                         progress);
-                    
+
                     var summary = await _currentProcessingTask;
-                    
+
                     // Check if CommonUtils.dll failed to load and show alert
                     if (summary.UIPluginLoadFailed && !string.IsNullOrWhiteSpace(TxtCommonUtilsDll.Text))
                     {
@@ -778,9 +778,9 @@ namespace BatchProcessor
 
                     // Determine if this is a report generation command
                     bool isReportGenerationCommand = (command.Contains("GenerateScrutinyReportBatch", StringComparison.OrdinalIgnoreCase) ||
-                                                      (command.Contains("Generate", StringComparison.OrdinalIgnoreCase) && 
+                                                      (command.Contains("Generate", StringComparison.OrdinalIgnoreCase) &&
                                                        command.Contains("Report", StringComparison.OrdinalIgnoreCase)));
-                    
+
                     int totalIssues = summary.FailedFiles.Count + summary.NonProcessedFiles.Count;
                     if (totalIssues == 0)
                     {
@@ -794,14 +794,14 @@ namespace BatchProcessor
                         {
                             TxtStatus.Text = $"⚠️ Processing complete! {summary.FailedFiles.Count} file(s) failed (no output created), {summary.NonProcessedFiles.Count} non-processed file(s).";
                             LogMessage($"\n⚠️ Processing complete with {summary.FailedFiles.Count} file(s) that did not generate output and {summary.NonProcessedFiles.Count} non-processed file(s).");
-                            WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} file(s) failed to generate output\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.", 
+                            WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} file(s) failed to generate output\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.",
                                 "Completed with Issues", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                         }
                         else
                         {
                             TxtStatus.Text = $"⚠️ Processing complete! {summary.FailedFiles.Count} validation failure(s), {summary.NonProcessedFiles.Count} non-processed file(s).";
                             LogMessage($"\n⚠️ Processing complete with {summary.FailedFiles.Count} validation failure(s) and {summary.NonProcessedFiles.Count} non-processed file(s).");
-                            WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} validation failure(s) (JSON created)\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.", 
+                            WpfMessageBox.Show($"Processing completed with issues:\n\n• {summary.FailedFiles.Count} validation failure(s) (JSON created)\n• {summary.NonProcessedFiles.Count} non-processed file(s) (errors before processing)\n\nCheck the sections below for details.",
                                 "Completed with Issues", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                         }
                     }
@@ -811,7 +811,7 @@ namespace BatchProcessor
                     TxtStatus.Text = "❌ Processing cancelled";
                     LogMessage("\n❌ Processing was cancelled by user.");
                     BtnRun.Content = "▶ Run Pre Scrutiny Validations";
-                    
+
                     // Show execution time even if cancelled
                     if (_processingStartTime.HasValue)
                     {
@@ -833,7 +833,7 @@ namespace BatchProcessor
                 {
                     // Always restore console output
                     Console.SetOut(originalOut);
-                    
+
                     // Reset button state on UI thread
                     Dispatcher.Invoke(() =>
                     {
@@ -893,7 +893,7 @@ namespace BatchProcessor
                 WpfMessageBox.Show("Please select a CSV parameter file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                 return false;
             }
-            
+
             if (!File.Exists(TxtCsvFile.Text))
             {
                 WpfMessageBox.Show("CSV file does not exist", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
@@ -926,7 +926,7 @@ namespace BatchProcessor
                 WpfMessageBox.Show("Max parallel processes must be at least 1", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                 return false;
             }
-            
+
             // Warn if very high (but allow it)
             if (maxParallel > 50)
             {
@@ -1060,7 +1060,7 @@ namespace BatchProcessor
             {
                 // Extract just the file name from the full path
                 string fileName = Path.GetFileName(filePath);
-                
+
                 var fileGrid = new Grid
                 {
                     Margin = new Thickness(5, 3, 5, 3)
@@ -1226,7 +1226,7 @@ namespace BatchProcessor
                 TxtLog.ScrollToEnd();
                 // Removed UpdateLayout() - it's expensive and causes UI blocking
                 // ScrollToEnd() is sufficient for scrolling
-                
+
                 // Monitor log messages to track file processing start/end for timers
                 if (message.Contains("🔄 Starting processing:"))
                 {
@@ -1258,7 +1258,7 @@ namespace BatchProcessor
                             fileName = match.Groups[1].Value.Trim();
                         }
                     }
-                    
+
                     if (!string.IsNullOrEmpty(fileName))
                     {
                         StopFileTimer(fileName);
@@ -1275,9 +1275,9 @@ namespace BatchProcessor
         // Custom TextWriter to redirect Console.WriteLine to our TextBox
         private class TextBoxWriter : System.IO.TextWriter
         {
-            private MainWindow _window;
+            private PreScrutinyWindow _window;
 
-            public TextBoxWriter(MainWindow window)
+            public TextBoxWriter(PreScrutinyWindow window)
             {
                 _window = window;
             }
@@ -1318,12 +1318,12 @@ namespace BatchProcessor
             try
             {
                 LogMessage("🛑 Killing all BatchProcessor and AutoCAD console processes...");
-                
+
                 int killedCount = 0;
-                
+
                 // Get all processes to kill
                 var processesToKill = Process.GetProcesses()
-                    .Where(p => 
+                    .Where(p =>
                         p.ProcessName.Equals("BatchProcessor", StringComparison.OrdinalIgnoreCase) ||
                         p.ProcessName.Equals("acad", StringComparison.OrdinalIgnoreCase) ||
                         p.ProcessName.Equals("acadConsole", StringComparison.OrdinalIgnoreCase) ||
@@ -1373,16 +1373,16 @@ namespace BatchProcessor
         {
             // Set flag to prevent shutdown
             _isNavigatingBack = true;
-            
+
             // Go back to mode selection window
             var modeSelectionWindow = new ModeSelectionWindow();
-            
+
             // Set mode selection as MainWindow temporarily to prevent shutdown
             System.Windows.Application.Current.MainWindow = modeSelectionWindow;
-            
+
             // Close current window
             this.Close();
-            
+
             // Show mode selection window
             if (modeSelectionWindow.ShowDialog() == true && modeSelectionWindow.IsModeSelected)
             {
@@ -1398,20 +1398,20 @@ namespace BatchProcessor
                         newWindow = new RelationsWindow();
                         break;
 
-                    case ModeSelectionWindow.SelectedMode.CommandsExecution:
+                    case ModeSelectionWindow.SelectedMode.PreScrutinyValidations:
                     default:
-                        newWindow = new MainWindow();
+                        newWindow = new PreScrutinyWindow();
                         break;
                 }
 
                 // Update MainWindow property
                 System.Windows.Application.Current.MainWindow = newWindow;
-                
+
                 // Ensure window is enabled and visible
                 newWindow.IsEnabled = true;
                 newWindow.Visibility = Visibility.Visible;
                 newWindow.WindowState = WindowState.Normal;
-                
+
                 // Show and activate (Closing event handler is set in constructor)
                 newWindow.Show();
                 newWindow.Activate();
@@ -1443,4 +1443,3 @@ namespace BatchProcessor
 
     #endregion
 }
-

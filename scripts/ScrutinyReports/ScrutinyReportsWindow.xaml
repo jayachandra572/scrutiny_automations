@@ -1,0 +1,236 @@
+<Window x:Class="BatchProcessor.Scripts.ScrutinyReports.ScrutinyReportsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Scrutiny Reports Generation" Height="750" Width="900"
+        MinHeight="500" MinWidth="700"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" MinHeight="200"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header with Back Button -->
+        <Border Grid.Row="0" Background="#2C3E50" Padding="15" Margin="0,0,0,15" CornerRadius="5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Back Button -->
+                <Button Grid.Column="0" x:Name="BtnBack" Content="⬅" Width="40" Height="40" FontSize="20"
+                        Background="Transparent" Foreground="White" BorderThickness="0"
+                        Click="BtnBack_Click" Cursor="Hand" Margin="0,0,10,0"
+                        ToolTip="Back to Mode Selection">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#34495E"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+
+                <!-- Title -->
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="📊 Scrutiny Reports Generation" FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Generate scrutiny report files for multiple DWG files" FontSize="12" Foreground="#ECF0F1" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Input/Output Paths -->
+        <GroupBox Grid.Row="1" Header="📁 Input/Output Folders" Margin="0,0,0,10" Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="100"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Input Folder -->
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Input Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <TextBox Grid.Row="0" Grid.Column="1" x:Name="TxtInputFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseInput_Click"/>
+
+                <!-- Output Folder -->
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Output Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="TxtOutputFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseOutput_Click"/>
+
+                <!-- CSV Parameter File -->
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="CSV Parameters:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="CSV file with drawing-specific parameters"/>
+                <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtCsvFile" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="2" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseCsv_Click"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- DLL Paths -->
+        <GroupBox Grid.Row="2" Header="📦 DLL Paths" Margin="0,0,0,10" Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="100"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Crx DLL (Required) -->
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Crx DLL:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <TextBox Grid.Row="0" Grid.Column="1" x:Name="TxtCrxDll" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseCrxDll_Click"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- AutoCAD Settings -->
+        <GroupBox Grid.Row="3" Header="🔧 AutoCAD Settings" Margin="0,0,0,10" Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="100"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="AutoCAD Path:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <TextBox Grid.Row="0" Grid.Column="1" x:Name="TxtAutoCADPath" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseAutoCAD_Click"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- Processing Settings -->
+        <GroupBox Grid.Row="4" Header="⚙️ Processing Settings" Margin="0,0,0,10" Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Command (Fixed) -->
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Command:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="GenerateScrutinyReportBatch" Margin="5" Padding="5" VerticalAlignment="Center"
+                           Foreground="#2C3E50" FontWeight="SemiBold" FontSize="12"/>
+
+                <!-- Max Parallel Processes -->
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Max Parallel:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="5">
+                    <TextBox x:Name="TxtMaxParallel" Width="100" Padding="5" Text="4" VerticalAlignment="Center"/>
+                    <TextBlock Text="processes" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
+                    <Button x:Name="BtnSetMaxParallel" Content="Set to File Count" Margin="10,0,0,0" Padding="8,3" Click="BtnSetMaxParallel_Click"
+                            ToolTip="Automatically set max parallel to match the number of files in the input folder"/>
+                </StackPanel>
+
+                <!-- Verbose Logging -->
+                <CheckBox Grid.Row="2" Grid.Column="1" x:Name="ChkVerbose" Content="Enable verbose logging" Margin="5" VerticalAlignment="Center"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,10">
+            <Button x:Name="BtnRun" Content="▶ Generate Reports" Width="250" Height="40" FontSize="16" FontWeight="Bold"
+                    Background="#9B59B6" Foreground="White" Click="BtnRun_Click" Margin="5"/>
+            <Button x:Name="BtnSaveSettings" Content="💾 Save Settings" Width="150" Height="40" FontSize="14"
+                    Background="#3498DB" Foreground="White" Click="BtnSaveSettings_Click" Margin="5"/>
+        </StackPanel>
+
+        <!-- Progress/Status -->
+        <GroupBox Grid.Row="6" Header="📊 Status" Margin="0,0,0,10" Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" x:Name="TxtStatus" Text="Ready to process..."
+                           TextWrapping="Wrap"
+                           FontWeight="SemiBold"
+                           FontSize="12"
+                           Padding="5"
+                           MinHeight="30"/>
+                <TextBlock Grid.Row="1" x:Name="TxtExecutionTime" Text=""
+                           TextWrapping="Wrap"
+                           FontWeight="Normal"
+                           FontSize="11"
+                           Foreground="#7F8C8D"
+                           Padding="5,0,5,5"
+                           Visibility="Collapsed"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- Active File Timers -->
+        <GroupBox Grid.Row="7" Header="⏱️ Active File Timers" Margin="0,0,0,10" Padding="10" Visibility="Collapsed" x:Name="GrpActiveTimers">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="200">
+                <StackPanel x:Name="StkActiveTimers">
+                    <TextBlock Text="No files currently processing" Foreground="Gray" FontStyle="Italic"/>
+                </StackPanel>
+            </ScrollViewer>
+        </GroupBox>
+
+        <!-- Failed Files Section -->
+        <GroupBox Grid.Row="8" Header="❌ Failed Files (No Report Generated)" Margin="0,0,0,10" Padding="10" Visibility="Collapsed" x:Name="GrpFailedFiles">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="200">
+                <StackPanel x:Name="StkFailedFiles">
+                    <TextBlock Text="No failures" Foreground="Gray" FontStyle="Italic"/>
+                </StackPanel>
+            </ScrollViewer>
+        </GroupBox>
+
+        <!-- Non-Processed Files Section -->
+        <GroupBox Grid.Row="9" Header="⚠️ Non-Processed Files" Margin="0,0,0,10" Padding="10" Visibility="Collapsed" x:Name="GrpNonProcessedFiles">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="150">
+                <StackPanel x:Name="StkNonProcessedFiles">
+                    <TextBlock Text="No non-processed files" Foreground="Gray" FontStyle="Italic"/>
+                </StackPanel>
+            </ScrollViewer>
+        </GroupBox>
+
+        <!-- Log Output -->
+        <GroupBox Grid.Row="11" Header="📝 Log Output" Margin="0,0,0,10" Padding="5">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <TextBox x:Name="TxtLog" IsReadOnly="True" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" Background="#F8F9FA"
+                         FontFamily="Consolas" FontSize="11" BorderThickness="0"/>
+            </ScrollViewer>
+        </GroupBox>
+
+        <!-- Footer -->
+        <Border Grid.Row="12" Background="#ECF0F1" Padding="10" CornerRadius="5">
+            <TextBlock Text="💡 Tip: All settings are automatically saved and restored next time you open the application"
+                       TextWrapping="Wrap" Foreground="#7F8C8D" FontSize="11" HorizontalAlignment="Center"/>
+        </Border>
+        </Grid>
+    </ScrollViewer>
+</Window>

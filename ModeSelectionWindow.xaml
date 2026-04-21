@@ -35,6 +35,7 @@
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="*"/>
+                <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -192,8 +193,84 @@
                 </Grid>
             </Border>
 
-            <!-- JSON Diff Comparison Mode -->
+            <!-- Scrutiny Reports Generation Mode -->
             <Border Grid.Row="2"
+                   Background="White"
+                   CornerRadius="8"
+                   Padding="15"
+                   Cursor="Hand"
+                   MouseLeftButtonDown="Border_ReportsMode_Click"
+                   BorderThickness="2"
+                   BorderBrush="#9B59B6"
+                   Margin="0,0,0,10">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#8E44AD"/>
+                                <Setter Property="Background" Value="#F4ECF7"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Icon -->
+                    <TextBlock Grid.Column="0"
+                              Text="📊"
+                              FontSize="36"
+                              VerticalAlignment="Center"
+                              Margin="0,0,15,0"/>
+
+                    <!-- Content -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Scrutiny Reports Generation"
+                                  FontSize="18"
+                                  FontWeight="Bold"
+                                  Margin="0,0,0,8"
+                                  Foreground="#2C3E50"/>
+                        <TextBlock TextWrapping="Wrap"
+                                  Foreground="#7F8C8D"
+                                  FontSize="12"
+                                  LineHeight="18">
+                            <Run Text="Generate scrutiny report files for multiple DWG files using the GenerateScrutinyReportBatch command and Crx DLL."/>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <!-- Button -->
+                    <Button Grid.Column="2"
+                           x:Name="BtnReportsMode"
+                           Content="Select"
+                           Margin="15,0,0,0"
+                           Padding="25,12"
+                           VerticalAlignment="Center"
+                           Background="#9B59B6"
+                           Foreground="White"
+                           FontSize="14"
+                           FontWeight="Bold"
+                           BorderThickness="0"
+                           Click="BtnReportsMode_Click"
+                           Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#8E44AD"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- JSON Diff Comparison Mode -->
+            <Border Grid.Row="3"
                    Background="White" 
                    CornerRadius="8" 
                    Padding="15"
