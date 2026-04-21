@@ -2,6 +2,8 @@ using System.Windows;
 using BatchProcessor.JsonDiff;
 using BatchProcessor.Scripts.PreScrutiny;
 using BatchProcessor.Scripts.ScrutinyReports;
+using BatchProcessor.Scripts.BulkDownload;
+using BatchProcessor.Relations;
 
 namespace BatchProcessor
 {
@@ -29,6 +31,16 @@ namespace BatchProcessor
                     case ModeSelectionWindow.SelectedMode.ScrutinyReports:
                         // Open Scrutiny Reports Generation window
                         mainWindow = new ScrutinyReportsWindow();
+                        break;
+
+                    case ModeSelectionWindow.SelectedMode.BulkDownloadAndProcess:
+                        // Open Bulk Download & Process window
+                        mainWindow = new BulkDownloadAndProcessWindow();
+                        break;
+
+                    case ModeSelectionWindow.SelectedMode.RelationsCreation:
+                        // Open Relations Creation window
+                        mainWindow = new RelationsWindow();
                         break;
 
                     case ModeSelectionWindow.SelectedMode.PreScrutinyValidations:

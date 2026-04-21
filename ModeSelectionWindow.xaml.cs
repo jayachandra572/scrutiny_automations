@@ -8,6 +8,7 @@ namespace BatchProcessor
         {
             PreScrutinyValidations,
             ScrutinyReports,
+            BulkDownloadAndProcess,
             JsonDiffComparison,
             RelationsCreation
         }
@@ -59,6 +60,16 @@ namespace BatchProcessor
         private void Border_ReportsMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             SelectMode(SelectedMode.ScrutinyReports);
+        }
+
+        private void BtnDownloadMode_Click(object sender, RoutedEventArgs e)
+        {
+            SelectMode(SelectedMode.BulkDownloadAndProcess);
+        }
+
+        private void Border_DownloadMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            SelectMode(SelectedMode.BulkDownloadAndProcess);
         }
 
         private void SelectMode(SelectedMode mode)

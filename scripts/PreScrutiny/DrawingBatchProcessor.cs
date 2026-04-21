@@ -378,6 +378,12 @@ namespace BatchProcessor.PreScrutiny
                     {
                         drawingConfigJson = File.ReadAllText(drawingConfigPath);
                     }
+                    else
+                    {
+                        // No JSON file provided - generate default empty config
+                        drawingConfigJson = "{}";
+                        Console.WriteLine($"  📋 Using default empty configuration");
+                    }
                 }
                 
                 // Validate that we have config content before proceeding

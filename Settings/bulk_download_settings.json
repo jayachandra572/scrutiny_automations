@@ -1,0 +1,10 @@
+{
+  "LinksFile": "C:\\Users\\Jaya\\Downloads\\drawing_file_links.txt",
+  "DownloadFolder": "C:\\Users\\Jaya\\Downloads\\downloaded_drawings",
+  "OutputFolder": "D:\\UrbanFloww\\Automations\\Reports",
+  "DllPath": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",
+  "AutoCADPath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\accoreconsole.exe",
+  "CommandName": "GenerateNetAndGrossMortgageArea",
+  "MaxParallel": 4,
+  "VerboseLogging": false
+}
