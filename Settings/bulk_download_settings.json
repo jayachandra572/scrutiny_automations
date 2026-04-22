@@ -6,5 +6,5 @@
   "AutoCADPath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\accoreconsole.exe",
   "CommandName": "GenerateNetAndGrossMortgageArea",
   "MaxParallel": 4,
-  "VerboseLogging": false
+  "VerboseLogging": true
 }

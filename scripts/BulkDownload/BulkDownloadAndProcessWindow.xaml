@@ -142,7 +142,7 @@
                 <!-- Max Parallel Processes -->
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Max Parallel:" VerticalAlignment="Center" Margin="0,5,0,5"/>
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="5">
-                    <TextBox x:Name="TxtMaxParallel" Width="100" Padding="5" Text="4" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TxtMaxParallel" Width="100" Padding="5" Text="10" VerticalAlignment="Center"/>
                     <TextBlock Text="processes" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="Gray"/>
                 </StackPanel>
 

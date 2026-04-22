@@ -313,6 +313,17 @@ namespace BatchProcessor.Scripts.BulkDownload
                 _cancellationTokenSource = new CancellationTokenSource();
                 var cancellationToken = _cancellationTokenSource.Token;
 
+                var processor = new DrawingBatchProcessor(
+                   accoreconsoleExePath: TxtAutoCADPath.Text,
+                   dllsToLoad: dllsToLoad,
+                   mainCommand: commandName,
+                   maxParallelism: 1, // Process one file at a time per pipeline
+                   tempScriptFolder: "",
+                   enableVerboseLogging: verbose
+                );
+
+            
+
                 // Start the download and processing task
                 await DownloadAndProcessAsync(linksFile, downloadFolder, outputFolder, commandName, dllsToLoad, maxParallel, verbose, cancellationToken);
 
@@ -374,59 +385,38 @@ namespace BatchProcessor.Scripts.BulkDownload
                 throw new Exception("No valid download links found in the file");
             }
 
-            // Create download folder
+            // Create download and output folders
             Directory.CreateDirectory(downloadFolder);
+            Directory.CreateDirectory(outputFolder);
 
-            // Download files
-            LogMessage($"\n⬇️ Starting downloads to: {downloadFolder}");
-            var downloadedFiles = new List<string>();
+            // Create timestamped folders for this batch run
+            string batchStartTime = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string batchDownloadFolder = Path.Combine(downloadFolder, batchStartTime + "_drawing_files");
+            string batchOutputFolder = Path.Combine(outputFolder, batchStartTime + "_reports");
+            Directory.CreateDirectory(batchDownloadFolder);
+            Directory.CreateDirectory(batchOutputFolder);
+            LogMessage($"📁 Downloads: {batchStartTime}_drawing_files");
+            LogMessage($"📁 Reports: {batchStartTime}_reports");
 
-            using (var client = new WebClient())
-            {
-                for (int i = 0; i < links.Count; i++)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    string link = links[i].Trim();
-                    string fileName = Path.GetFileName(new Uri(link).LocalPath);
-                    if (string.IsNullOrEmpty(fileName))
-                    {
-                        fileName = $"drawing_{i + 1}.dwg";
-                    }
-
-                    string filePath = Path.Combine(downloadFolder, fileName);
-
-                    try
-                    {
-                        LogMessage($"📥 Downloading ({i + 1}/{links.Count}): {fileName}");
-                        await Task.Run(() => client.DownloadFile(link, filePath), cancellationToken);
-                        downloadedFiles.Add(filePath);
-                        LogMessage($"✅ Downloaded: {fileName}");
-                    }
-                    catch (Exception ex)
-                    {
-                        LogMessage($"❌ Failed to download {fileName}: {ex.Message}");
-                    }
-                }
-            }
-
-            if (downloadedFiles.Count == 0)
-            {
-                throw new Exception("No files were successfully downloaded");
-            }
-
-            LogMessage($"\n✅ Downloaded {downloadedFiles.Count} file(s)");
-
-            // Process downloaded files
-            LogMessage($"\n⚙️ Starting processing with command: {commandName}");
+            // Create processor once
             var processor = new DrawingBatchProcessor(
                 accoreconsoleExePath: TxtAutoCADPath.Text,
                 dllsToLoad: dllsToLoad,
                 mainCommand: commandName,
-                maxParallelism: maxParallel,
+                maxParallelism: 1, // Process one file at a time per pipeline
                 tempScriptFolder: "",
                 enableVerboseLogging: verbose
             );
+
+            await processor.ProcessFromLinksAsync(
+                links: links,
+                downloadFolder: downloadFolder,
+                outputFolder: outputFolder,
+                inputJsonPath: string.Empty,
+                maxParallel: maxParallel,
+                cancellationToken: cancellationToken);
+            Console.WriteLine("DONE");
+            return;
 
             var originalOut = Console.Out;
             var textBoxWriter = new TextBoxWriter(this);
@@ -434,28 +424,131 @@ namespace BatchProcessor.Scripts.BulkDownload
 
             try
             {
-                var progress = new Progress<(int completed, int total)>(update =>
+                // Parallel pipeline: download → process each file → check JSON → delete if needed
+                LogMessage($"\n📥 Starting parallel pipeline ({maxParallel} concurrent)...");
+                var pipelineTasks = new List<Task>();
+                var semaphore = new System.Threading.SemaphoreSlim(maxParallel);
+                int successCount = 0;
+                int failedCount = 0;
+                int processingCount = 0;
+                int totalFiles = links.Count;
+                var lockObj = new object();
+
+                for (int i = 0; i < links.Count; i++)
                 {
-                    _completedFiles = update.completed;
-                    _totalFiles = update.total;
-                    Dispatcher.Invoke(() =>
+                    int index = i;
+                    string link = links[i].Trim();
+
+                    pipelineTasks.Add(Task.Run(async () =>
                     {
-                        TxtStatus.Text = $"Processing... {_completedFiles}/{_totalFiles} files completed";
-                    });
-                });
+                        await semaphore.WaitAsync(cancellationToken);
+                        try
+                        {
+                            string fileName = Path.GetFileName(new Uri(link).LocalPath);
+                            if (string.IsNullOrEmpty(fileName))
+                            {
+                                fileName = $"drawing_{index + 1}.dwg";
+                            }
 
-                _currentProcessingTask = processor.ProcessFolderAsync(
-                    downloadFolder,
-                    outputFolder,
-                    "",
-                    cancellationToken,
-                    progress);
+                            string filePath = Path.Combine(batchDownloadFolder, fileName);
 
-                var summary = await _currentProcessingTask;
-                LogMessage($"\n✅ Processing complete!");
-                LogMessage($"   - Successful: {_totalFiles - summary.FailedFiles.Count - summary.NonProcessedFiles.Count}");
-                LogMessage($"   - Failed: {summary.FailedFiles.Count}");
-                LogMessage($"   - Non-processed: {summary.NonProcessedFiles.Count}");
+                            lock (lockObj)
+                            {
+                                processingCount++;
+                                int remaining = totalFiles - processingCount;
+                                LogMessage($"\n[{processingCount}/{totalFiles}] 📥 Downloading: {fileName}");
+                                Dispatcher.Invoke(() =>
+                                {
+                                    TxtStatus.Text = $"Processing: {processingCount}/{totalFiles} | Success: {successCount} | Failed: {failedCount}";
+                                });
+                            }
+
+                            try
+                            {
+                                // STEP 1: DOWNLOAD
+                                using (var client = new WebClient())
+                                {
+                                    await Task.Run(() => client.DownloadFile(link, filePath), cancellationToken);
+                                }
+                                lock (lockObj) { LogMessage($"         ✅ Downloaded"); }
+
+                                // STEP 2: PROCESS individual file
+                                lock (lockObj) { LogMessage($"         ⚙️ Processing..."); }
+
+                                await processor.ProcessSingleDrawingAsync(
+                                    filePath,
+                                    "", // inputJsonPath - empty = use default config
+                                    batchOutputFolder);
+
+                                // STEP 3: CHECK JSON
+                                string drawingName = Path.GetFileNameWithoutExtension(filePath);
+                                string jsonFileName = $"{drawingName}.json";
+                                var jsonFiles = Directory.GetFiles(batchOutputFolder, jsonFileName, SearchOption.TopDirectoryOnly);
+
+                                // STEP 4: DELETE OR KEEP
+                                if (jsonFiles.Length == 0)
+                                {
+                                    File.Delete(filePath);
+                                    lock (lockObj)
+                                    {
+                                        LogMessage($"         🗑️ Deleted (no JSON)");
+                                        failedCount++;
+                                        int remaining = totalFiles - (successCount + failedCount);
+                                        Dispatcher.Invoke(() =>
+                                        {
+                                            TxtStatus.Text = $"Processing: {successCount + failedCount}/{totalFiles} | Success: {successCount} | Failed: {failedCount}";
+                                        });
+                                    }
+                                }
+                                else
+                                {
+                                    lock (lockObj)
+                                    {
+                                        LogMessage($"         ✅ Kept (JSON created)");
+                                        successCount++;
+                                        int remaining = totalFiles - (successCount + failedCount);
+                                        Dispatcher.Invoke(() =>
+                                        {
+                                            TxtStatus.Text = $"Processing: {successCount + failedCount}/{totalFiles} | Success: {successCount} | Failed: {failedCount}";
+                                        });
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                lock (lockObj)
+                                {
+                                    LogMessage($"         ❌ Error: {ex.Message}");
+                                    failedCount++;
+                                    int remaining = totalFiles - (successCount + failedCount);
+                                    Dispatcher.Invoke(() =>
+                                    {
+                                        TxtStatus.Text = $"Processing: {successCount + failedCount}/{totalFiles} | Success: {successCount} | Failed: {failedCount}";
+                                    });
+                                }
+                                try
+                                {
+                                    if (File.Exists(filePath))
+                                        File.Delete(filePath);
+                                }
+                                catch { }
+                            }
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    }, cancellationToken));
+                }
+
+                await Task.WhenAll(pipelineTasks);
+
+                lock (lockObj)
+                {
+                    LogMessage($"\n✅ Pipeline complete!");
+                    LogMessage($"   - Successful: {successCount}");
+                    LogMessage($"   - Failed: {failedCount}");
+                }
             }
             finally
             {

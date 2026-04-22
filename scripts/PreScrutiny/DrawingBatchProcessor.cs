@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -306,7 +307,7 @@ namespace BatchProcessor.PreScrutiny
         /// <summary>
         /// Process a single drawing file
         /// </summary>
-        private async Task<ProcessingResult> ProcessSingleDrawingAsync(
+        public async Task<ProcessingResult> ProcessSingleDrawingAsync(
             string dwgPath,
             string inputJsonPath,
             string outputFolder)
@@ -788,9 +789,9 @@ namespace BatchProcessor.PreScrutiny
                 result.WasProcessed = true;
                 
                 // Determine success based on command type
-                bool isReportGenerationCommand = (_mainCommand.Contains("GenerateScrutinyReportBatch", StringComparison.OrdinalIgnoreCase) ||
+                bool isReportGenerationCommand = _mainCommand.Contains("GenerateScrutinyReportBatch", StringComparison.OrdinalIgnoreCase) ||
                                                   (_mainCommand.Contains("Generate", StringComparison.OrdinalIgnoreCase) && 
-                                                   _mainCommand.Contains("Report", StringComparison.OrdinalIgnoreCase)));
+                                                   _mainCommand.Contains("Report", StringComparison.OrdinalIgnoreCase));
                 
                 if (isReportGenerationCommand)
                 {
@@ -1011,7 +1012,7 @@ namespace BatchProcessor.PreScrutiny
             scriptBuilder.AppendLine($"(setq BATCH_PARAM_FILE \"{paramFilePath.Replace("\\", "\\\\")}\")");
 
             // Execute the selected command
-            scriptBuilder.AppendLine(_mainCommand);
+           scriptBuilder.AppendLine($"(command \"._{_mainCommand}\")");
 
             // CRITICAL: Add explicit delay and force QUIT to ensure process exits
             // Even if command hangs, this ensures script continues
@@ -1105,6 +1106,100 @@ namespace BatchProcessor.PreScrutiny
             }
 
             Console.WriteLine($"\n{new string('═', 64)}\n");
+        }
+
+
+        public async Task ProcessFromLinksAsync(
+            List<string> links,
+            string downloadFolder,
+            string outputFolder,
+            string inputJsonPath,
+            int maxParallel,
+            CancellationToken cancellationToken = default)
+        {
+            Directory.CreateDirectory(downloadFolder);
+            Directory.CreateDirectory(outputFolder);
+
+            Console.WriteLine($"\n🚀 Starting pipeline (MaxParallel: {maxParallel})");
+
+            await Parallel.ForEachAsync(links, new ParallelOptions
+            {
+                MaxDegreeOfParallelism = maxParallel,
+                CancellationToken = cancellationToken
+            },
+            async (link, ct) =>
+            {
+                string filePath = "";
+                string fileName = "";
+
+                try
+                {
+                    // 🔹 STEP 1: Prepare file
+                    fileName = Path.GetFileName(new Uri(link).LocalPath);
+                    if (string.IsNullOrWhiteSpace(fileName))
+                        fileName = Guid.NewGuid() + ".dwg";
+
+                    filePath = Path.Combine(downloadFolder, fileName);
+
+                    Console.WriteLine($"\n📥 Downloading: {fileName}");
+
+                    // 🔹 STEP 2: DOWNLOAD
+                    using (var client = new WebClient())
+                    {
+                        await client.DownloadFileTaskAsync(link, filePath);
+                    }
+
+                    Console.WriteLine($"✅ Downloaded: {fileName}");
+
+                    // 🔹 STEP 3: PROCESS (WITH TIMEOUT)
+                    var processingTask = ProcessSingleDrawingAsync(
+                        filePath,
+                        inputJsonPath,
+                        outputFolder);
+
+                    var completed = await Task.WhenAny(
+                        processingTask,
+                        Task.Delay(TimeSpan.FromMinutes(6), ct)
+                    );
+
+                    if (completed != processingTask)
+                    {
+                        Console.WriteLine($"⚠️ Timeout → Skipping: {fileName}");
+                        return;
+                    }
+
+                    var result = await processingTask;
+
+                    // 🔹 STEP 4: CHECK JSON
+                    string drawingName = Path.GetFileNameWithoutExtension(fileName);
+                    string jsonPath = Path.Combine(outputFolder, $"{drawingName}.json");
+
+                    if (File.Exists(jsonPath))
+                    {
+                        Console.WriteLine($"✅ JSON created → KEEP: {fileName}");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            File.Delete(filePath);
+                            Console.WriteLine($"🗑️ Deleted (no JSON): {fileName}");
+                        }
+                        catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"❌ Error ({fileName}): {ex.Message}");
+
+                    if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+                    {
+                        try { File.Delete(filePath); } catch { }
+                    }
+                }
+            });
+
+            Console.WriteLine("\n✅ All links processed");
         }
     }
 
