@@ -35,91 +35,13 @@
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="*"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Create Relations Mode -->
-            <Border Grid.Row="0"
-                   Background="White" 
-                   CornerRadius="8" 
-                   Padding="15"
-                   Cursor="Hand"
-                   MouseLeftButtonDown="Border_RelationsMode_Click"
-                   BorderThickness="2"
-                   BorderBrush="#E67E22"
-                   Margin="0,0,0,10">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="BorderBrush" Value="#D35400"/>
-                                <Setter Property="Background" Value="#FEF5E7"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    
-                    <!-- Icon -->
-                    <TextBlock Grid.Column="0"
-                              Text="🔗" 
-                              FontSize="36" 
-                              VerticalAlignment="Center"
-                              Margin="0,0,15,0"/>
-                    
-                    <!-- Content -->
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="Create Relations" 
-                                  FontSize="18" 
-                                  FontWeight="Bold" 
-                                  Margin="0,0,0,8"
-                                  Foreground="#2C3E50"/>
-                        <TextBlock TextWrapping="Wrap" 
-                                  Foreground="#7F8C8D"
-                                  FontSize="12"
-                                  LineHeight="18">
-                            <Run Text="Process drawings using AutoCAD GUI. Load UIPlugin DLL and run CREATE_RELATIONS_FOR_ENTITIES command."/>
-                        </TextBlock>
-                    </StackPanel>
-                    
-                    <!-- Button -->
-                    <Button Grid.Column="2"
-                           x:Name="BtnRelationsMode" 
-                           Content="Select" 
-                           Margin="15,0,0,0"
-                           Padding="25,12"
-                           VerticalAlignment="Center"
-                           Background="#E67E22"
-                           Foreground="White"
-                           FontSize="14"
-                           FontWeight="Bold"
-                           BorderThickness="0"
-                           Click="BtnRelationsMode_Click"
-                           Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#D35400"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                </Grid>
-            </Border>
-
             <!-- Pre Scrutiny Validations Mode -->
-            <Border Grid.Row="1"
+            <Border Grid.Row="0"
                    Background="White" 
                    CornerRadius="8" 
                    Padding="15"
@@ -195,7 +117,7 @@
             </Border>
 
             <!-- Scrutiny Reports Generation Mode -->
-            <Border Grid.Row="2"
+            <Border Grid.Row="1"
                    Background="White"
                    CornerRadius="8"
                    Padding="15"
@@ -271,7 +193,7 @@
             </Border>
 
             <!-- Bulk Download and Process Mode -->
-            <Border Grid.Row="3"
+            <Border Grid.Row="2"
                    Background="White"
                    CornerRadius="8"
                    Padding="15"
@@ -338,81 +260,6 @@
                                 <Style.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter Property="Background" Value="#C0392B"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                </Grid>
-            </Border>
-
-            <!-- JSON Diff Comparison Mode -->
-            <Border Grid.Row="4"
-                   Background="White" 
-                   CornerRadius="8" 
-                   Padding="15"
-                   Cursor="Hand"
-                   MouseLeftButtonDown="Border_DiffMode_Click"
-                   BorderThickness="2"
-                   BorderBrush="#27AE60">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Style.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="BorderBrush" Value="#229954"/>
-                                <Setter Property="Background" Value="#EAFAF1"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    
-                    <!-- Icon -->
-                    <TextBlock Grid.Column="0"
-                              Text="🔍" 
-                              FontSize="36" 
-                              VerticalAlignment="Center"
-                              Margin="0,0,15,0"/>
-                    
-                    <!-- Content -->
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="JSON Diff Comparison" 
-                                  FontSize="18" 
-                                  FontWeight="Bold" 
-                                  Margin="0,0,0,8"
-                                  Foreground="#2C3E50"/>
-                        <TextBlock TextWrapping="Wrap" 
-                                  Foreground="#7F8C8D"
-                                  FontSize="12"
-                                  LineHeight="18">
-                            <Run Text="Compare JSON files between two folders. Find differences between reference and latest JSON output files."/>
-                        </TextBlock>
-                    </StackPanel>
-                    
-                    <!-- Button -->
-                    <Button Grid.Column="2"
-                           x:Name="BtnDiffMode" 
-                           Content="Select" 
-                           Margin="15,0,0,0"
-                           Padding="25,12"
-                           VerticalAlignment="Center"
-                           Background="#27AE60"
-                           Foreground="White"
-                           FontSize="14"
-                           FontWeight="Bold"
-                           BorderThickness="0"
-                           Click="BtnDiffMode_Click"
-                           Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#229954"/>
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>

@@ -1,7 +1,7 @@
 {
-  "InputFolder": "C:\\Users\\Jaya\\Downloads\\GHMC_17-04-2026_41Files (1)\\single file",
+  "InputFolder": "C:\\Users\\Jaya\\Downloads\\internal_test_files",
   "OutputFolder": "D:\\UrbanFloww\\Automations\\Reports",
-  "CsvFile": "C:\\Users\\Jaya\\Downloads\\GHMC_09-04-2026_41Files (1).csv",
+  "CsvFile": "C:\\Users\\Jaya\\Downloads\\internal_files.csv",
   "CrxDll": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",
   "AutoCADPath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\accoreconsole.exe",
   "SelectedCommand": "GenerateScrutinyReportBatch",
