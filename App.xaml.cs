@@ -4,6 +4,7 @@ using BatchProcessor.Scripts.PreScrutiny;
 using BatchProcessor.Scripts.ScrutinyReports;
 using BatchProcessor.Scripts.BulkDownload;
 using BatchProcessor.Relations;
+using BatchProcessor.Scripts.GenerateJsonZips;
 
 namespace BatchProcessor
 {
@@ -41,6 +42,10 @@ namespace BatchProcessor
                     case ModeSelectionWindow.SelectedMode.RelationsCreation:
                         // Open Relations Creation window
                         mainWindow = new RelationsWindow();
+                        break;
+
+                    case ModeSelectionWindow.SelectedMode.GenerateJsonZips:
+                        mainWindow = new GenerateJsonZipsWindow();
                         break;
 
                     case ModeSelectionWindow.SelectedMode.PreScrutinyValidations:

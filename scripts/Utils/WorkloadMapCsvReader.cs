@@ -56,7 +56,9 @@ namespace BatchProcessor.Utils
                     h.Equals("WorkloadID", StringComparison.OrdinalIgnoreCase) ||
                     h.Equals("Workload ID", StringComparison.OrdinalIgnoreCase) ||
                     h.Equals("WorkLoad_Id", StringComparison.OrdinalIgnoreCase) ||
-                    h.Equals("work_load_id", StringComparison.OrdinalIgnoreCase));
+                    h.Equals("work_load_id", StringComparison.OrdinalIgnoreCase) ||
+                    h.Equals("Work load ID", StringComparison.OrdinalIgnoreCase) ||
+                    h.Equals("Work Load ID", StringComparison.OrdinalIgnoreCase));
 
                 if (workloadColumnIndex == -1)
                 {

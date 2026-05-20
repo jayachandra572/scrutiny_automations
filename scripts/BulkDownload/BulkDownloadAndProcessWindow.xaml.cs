@@ -714,6 +714,10 @@ namespace BatchProcessor.Scripts.BulkDownload
                         newWindow = new RelationsWindow();
                         break;
 
+                    case ModeSelectionWindow.SelectedMode.GenerateJsonZips:
+                        newWindow = new Scripts.GenerateJsonZips.GenerateJsonZipsWindow();
+                        break;
+
                     case ModeSelectionWindow.SelectedMode.BulkDownloadAndProcess:
                     default:
                         newWindow = new BulkDownloadAndProcessWindow();

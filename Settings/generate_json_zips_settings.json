@@ -1,0 +1,11 @@
+{
+  "DrawingsFolder": "C:\\Users\\Jaya\\Downloads\\test_files",
+  "AppParamsCsvFile": "C:\\Users\\Jaya\\Downloads\\internal_files.csv",
+  "WorkloadMapCsvFile": "C:\\Users\\Jaya\\Downloads\\Drawing files to Workload map - Testng Reports.csv",
+  "OutputFolder": "D:\\UrbanFloww\\Automations\\Reports",
+  "AutoCADPath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\accoreconsole.exe",
+  "CommonUtilsDll": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\UIPlugin\\bin\\Debug\\net8.0-windows\\CommonUtils.dll",
+  "CrxDll": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",
+  "MaxParallelProcesses": 4,
+  "VerboseLogging": false
+}

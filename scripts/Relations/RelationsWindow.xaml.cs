@@ -464,6 +464,18 @@ namespace BatchProcessor.Relations
                         newWindow = new JsonDiffWindow();
                         break;
 
+                    case ModeSelectionWindow.SelectedMode.ScrutinyReports:
+                        newWindow = new Scripts.ScrutinyReports.ScrutinyReportsWindow();
+                        break;
+
+                    case ModeSelectionWindow.SelectedMode.BulkDownloadAndProcess:
+                        newWindow = new Scripts.BulkDownload.BulkDownloadAndProcessWindow();
+                        break;
+
+                    case ModeSelectionWindow.SelectedMode.GenerateJsonZips:
+                        newWindow = new Scripts.GenerateJsonZips.GenerateJsonZipsWindow();
+                        break;
+
                     case ModeSelectionWindow.SelectedMode.PreScrutinyValidations:
                     default:
                         newWindow = new PreScrutinyWindow();

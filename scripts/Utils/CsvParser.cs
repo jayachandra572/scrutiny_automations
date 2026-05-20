@@ -133,6 +133,17 @@ namespace BatchProcessor.Utils
             }
 
             index = headers.FindIndex(h =>
+                h.Equals("DrawingFile Name", StringComparison.OrdinalIgnoreCase) ||
+                h.Equals("Drawing File Name", StringComparison.OrdinalIgnoreCase) ||
+                h.Equals("DrawingFileName", StringComparison.OrdinalIgnoreCase));
+
+            if (index >= 0)
+            {
+                Console.WriteLine($"✅ Found filename column: '{headers[index]}' (index {index})");
+                return index;
+            }
+
+            index = headers.FindIndex(h =>
                 h.Equals("Filename", StringComparison.OrdinalIgnoreCase) ||
                 h.Equals("File", StringComparison.OrdinalIgnoreCase) ||
                 h.Equals("Drawing", StringComparison.OrdinalIgnoreCase));

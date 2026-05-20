@@ -1079,6 +1079,14 @@ namespace BatchProcessor.Scripts.ScrutinyReports
                         newWindow = new RelationsWindow();
                         break;
 
+                    case ModeSelectionWindow.SelectedMode.BulkDownloadAndProcess:
+                        newWindow = new Scripts.BulkDownload.BulkDownloadAndProcessWindow();
+                        break;
+
+                    case ModeSelectionWindow.SelectedMode.GenerateJsonZips:
+                        newWindow = new Scripts.GenerateJsonZips.GenerateJsonZipsWindow();
+                        break;
+
                     case ModeSelectionWindow.SelectedMode.ScrutinyReports:
                     default:
                         newWindow = new ScrutinyReportsWindow();

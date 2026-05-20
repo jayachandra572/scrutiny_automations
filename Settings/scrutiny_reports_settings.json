@@ -1,5 +1,5 @@
 {
-  "InputFolder": "C:\\Users\\Jaya\\Downloads\\internal_test_files",
+  "InputFolder": "C:\\Users\\Jaya\\Downloads\\test_files",
   "OutputFolder": "D:\\UrbanFloww\\Automations\\Reports",
   "CsvFile": "C:\\Users\\Jaya\\Downloads\\internal_files.csv",
   "CrxDll": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",

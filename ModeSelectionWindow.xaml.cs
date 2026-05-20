@@ -10,7 +10,8 @@ namespace BatchProcessor
             ScrutinyReports,
             BulkDownloadAndProcess,
             JsonDiffComparison,
-            RelationsCreation
+            RelationsCreation,
+            GenerateJsonZips
         }
 
         public SelectedMode Mode { get; private set; }
@@ -70,6 +71,16 @@ namespace BatchProcessor
         private void Border_DownloadMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             SelectMode(SelectedMode.BulkDownloadAndProcess);
+        }
+
+        private void BtnGenerateJsonZipsMode_Click(object sender, RoutedEventArgs e)
+        {
+            SelectMode(SelectedMode.GenerateJsonZips);
+        }
+
+        private void Border_GenerateJsonZipsMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            SelectMode(SelectedMode.GenerateJsonZips);
         }
 
         private void SelectMode(SelectedMode mode)

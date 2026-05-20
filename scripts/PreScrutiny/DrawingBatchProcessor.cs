@@ -25,6 +25,12 @@ namespace BatchProcessor.PreScrutiny
         private CsvParameterMapper _csvMapper;
         private bool _useCsvMapping;
 
+        /// <summary>
+        /// Extra environment variables injected into every AutoCAD process launched by this instance.
+        /// Set before calling ProcessFolderAsync.
+        /// </summary>
+        public Dictionary<string, string> AdditionalEnvironmentVariables { get; } = new();
+
         public DrawingBatchProcessor(
             string accoreconsoleExePath,
             List<string> dllsToLoad,
@@ -434,6 +440,10 @@ namespace BatchProcessor.PreScrutiny
                 process.StartInfo.EnvironmentVariables["OUTPUT_FILENAME"] = outputFileName;
                 process.StartInfo.EnvironmentVariables["TIMESTAMP"] = timestamp;
                 process.StartInfo.EnvironmentVariables["DRAWING_NAME"] = result.DrawingName;
+
+                // Merge any additional per-instance environment variables (e.g. GENERATE_JSON_ALWAYS)
+                foreach (var kv in AdditionalEnvironmentVariables)
+                    process.StartInfo.EnvironmentVariables[kv.Key] = kv.Value;
 
                 // Disable verbose AutoCAD logs - suppress environment variable details
                 // (user requested to disable AutoCAD logs)
