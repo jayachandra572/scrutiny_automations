@@ -13,7 +13,7 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
     public class GenerateJsonZipsProcessor
     {
         private const string DrawingFileValidationsCommand = "RunDrawingFileValidationsBatch";
-        private const string PreScrutinyCommand = "RunPreScrutinyValidationsBatch";
+        private const string PreScrutinyCommand = "RunPreScrutinyOnlyValidationsBatch";
         private const string ScrutinyReportsCommand = "GenerateScrutinyReportBatch";
 
         private readonly string _drawingsFolder;
@@ -91,7 +91,7 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
         /// </summary>
         public async Task<GenerateJsonZipsResult> ProcessAsync(CancellationToken cancellationToken = default)
         {
-            var startTime = DateTime.Now;
+            var totalTimer = System.Diagnostics.Stopwatch.StartNew();
             var result = new GenerateJsonZipsResult();
 
             // Phase 0 — pre-flight
@@ -126,8 +126,9 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             string tempPreScrutiny = Path.Combine(batchFolder, "_tmp_pre_scrutiny");
             string tempScrutiny = Path.Combine(batchFolder, "_tmp_scrutiny");
 
-            // Phase 4 — Drawing File Validations pass (CommonUtils DLL, GENERATE_JSON_ALWAYS=true)
+            // Phase 4 — Drawing File Validations pass
             _log($"⚙️  Pass 1/3: Drawing File Validations ({DrawingFileValidationsCommand})...");
+            var sw1 = System.Diagnostics.Stopwatch.StartNew();
             await RunBatchPassAsync(
                 DrawingFileValidationsCommand,
                 tempDrawingValidations,
@@ -135,11 +136,14 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 cancellationToken,
                 totalDrawings: drawings.Count,
                 generateJsonAlways: true);
+            sw1.Stop();
+            _log($"   ⏱️  Pass 1 time: {FormatElapsed(sw1.Elapsed)}");
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Phase 5 — Pre-Scrutiny Validations pass (CommonUtils DLL, GENERATE_JSON_ALWAYS=true)
+            // Phase 5 — Pre-Scrutiny Validations pass
             _log($"⚙️  Pass 2/3: Pre-Scrutiny Validations ({PreScrutinyCommand})...");
+            var sw2 = System.Diagnostics.Stopwatch.StartNew();
             await RunBatchPassAsync(
                 PreScrutinyCommand,
                 tempPreScrutiny,
@@ -147,28 +151,36 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 cancellationToken,
                 totalDrawings: drawings.Count,
                 generateJsonAlways: true);
+            sw2.Stop();
+            _log($"   ⏱️  Pass 2 time: {FormatElapsed(sw2.Elapsed)}");
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Phase 6 — Scrutiny Reports pass (CRX DLL, no GENERATE_JSON_ALWAYS)
+            // Phase 6 — Scrutiny Reports pass
             _log($"⚙️  Pass 3/3: Scrutiny Reports Generation ({ScrutinyReportsCommand})...");
+            var sw3 = System.Diagnostics.Stopwatch.StartNew();
             await RunBatchPassAsync(
                 ScrutinyReportsCommand,
                 tempScrutiny,
                 BuildCrxDllList(),
                 cancellationToken,
                 totalDrawings: drawings.Count);
+            sw3.Stop();
+            _log($"   ⏱️  Pass 3 time: {FormatElapsed(sw3.Elapsed)}");
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Phase 7 — Build the 3 inner zips into the temp batch folder
+            // Phase 7 — Build the 3 inner zips
             _log("📦 Building zip files...");
+            var swZip = System.Diagnostics.Stopwatch.StartNew();
             var (succeeded, skipped) = BuildZips(
                 batchFolder,
                 drawings,
                 tempDrawingValidations,
                 tempPreScrutiny,
                 tempScrutiny);
+            swZip.Stop();
+            _log($"   ⏱️  Zip build time: {FormatElapsed(swZip.Elapsed)}");
 
             // Phase 8 — Wrap the 3 zips into one outer zip with a readable name
             string outerZipName = $"JsonZips_{batchTime:dd-MMM-yyyy_HH-mm}.zip";
@@ -176,17 +188,24 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             _log($"📦 Creating outer zip: {outerZipName}...");
             WrapInOuterZip(batchFolder, outerZipPath);
 
-            // Cleanup temp batch folder (inner zips + pass folders already deleted)
+            // Cleanup temp batch folder
             DeleteTempFolder(batchFolder);
 
+            totalTimer.Stop();
             result.SuccessfulDrawings = succeeded;
             result.SkippedDrawings = skipped.Count;
             result.SkippedDrawingNames = skipped;
             result.OutputBatchFolder = _outputFolder;
             result.Success = true;
-            result.Duration = DateTime.Now - startTime;
+            result.Duration = totalTimer.Elapsed;
 
+            _log($"");
             _log($"✅ Done. {succeeded} drawing(s) packaged, {skipped.Count} skipped (no WorkloadID).");
+            _log($"⏱️  Pass 1 (Drawing Validations) : {FormatElapsed(sw1.Elapsed)}");
+            _log($"⏱️  Pass 2 (Pre-Scrutiny)        : {FormatElapsed(sw2.Elapsed)}");
+            _log($"⏱️  Pass 3 (Scrutiny Reports)    : {FormatElapsed(sw3.Elapsed)}");
+            _log($"⏱️  Zip packaging                : {FormatElapsed(swZip.Elapsed)}");
+            _log($"⏱️  Total                        : {FormatElapsed(totalTimer.Elapsed)}");
             _log($"📁 Output: {outerZipPath}");
 
             return result;
@@ -323,6 +342,13 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 .Select(d => Path.Combine(d, drawingName + ".json"))
                 .FirstOrDefault(f => File.Exists(f));
         }
+
+        private static string FormatElapsed(TimeSpan t)
+            => t.TotalHours >= 1
+                ? $"{(int)t.TotalHours}h {t.Minutes:D2}m {t.Seconds:D2}s"
+                : t.TotalMinutes >= 1
+                    ? $"{t.Minutes}m {t.Seconds:D2}s"
+                    : $"{t.Seconds}.{t.Milliseconds / 100}s";
 
         private static void WrapInOuterZip(string sourceFolder, string outerZipPath)
         {
