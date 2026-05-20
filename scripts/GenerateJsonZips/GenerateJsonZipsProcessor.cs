@@ -116,10 +116,10 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             result.TotalDrawings = drawings.Count;
             _log($"📂 Found {drawings.Count} drawing(s) to process.");
 
-            // Phase 3 — create batch output folder
-            string batchFolder = Path.Combine(_outputFolder, DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+            // Phase 3 — create temp working folder for this batch
+            var batchTime = DateTime.Now;
+            string batchFolder = Path.Combine(_outputFolder, "_tmp_batch_" + batchTime.ToString("yyyyMMdd_HHmmss"));
             Directory.CreateDirectory(batchFolder);
-            _log($"📁 Output batch folder: {batchFolder}");
 
             // Temp sub-folders for each pass
             string tempDrawingValidations = Path.Combine(batchFolder, "_tmp_drawing_validations");
@@ -161,7 +161,7 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Phase 7 — Build zips
+            // Phase 7 — Build the 3 inner zips into the temp batch folder
             _log("📦 Building zip files...");
             var (succeeded, skipped) = BuildZips(
                 batchFolder,
@@ -170,20 +170,24 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 tempPreScrutiny,
                 tempScrutiny);
 
+            // Phase 8 — Wrap the 3 zips into one outer zip with a readable name
+            string outerZipName = $"JsonZips_{batchTime:dd-MMM-yyyy_HH-mm}.zip";
+            string outerZipPath = Path.Combine(_outputFolder, outerZipName);
+            _log($"📦 Creating outer zip: {outerZipName}...");
+            WrapInOuterZip(batchFolder, outerZipPath);
+
+            // Cleanup temp batch folder (inner zips + pass folders already deleted)
+            DeleteTempFolder(batchFolder);
+
             result.SuccessfulDrawings = succeeded;
             result.SkippedDrawings = skipped.Count;
             result.SkippedDrawingNames = skipped;
-            result.OutputBatchFolder = batchFolder;
+            result.OutputBatchFolder = _outputFolder;
             result.Success = true;
             result.Duration = DateTime.Now - startTime;
 
-            // Cleanup temp folders
-            DeleteTempFolder(tempDrawingValidations);
-            DeleteTempFolder(tempPreScrutiny);
-            DeleteTempFolder(tempScrutiny);
-
             _log($"✅ Done. {succeeded} drawing(s) packaged, {skipped.Count} skipped (no WorkloadID).");
-            _log($"📁 Output: {batchFolder}");
+            _log($"📁 Output: {outerZipPath}");
 
             return result;
         }
@@ -318,6 +322,13 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 .OrderByDescending(d => d)
                 .Select(d => Path.Combine(d, drawingName + ".json"))
                 .FirstOrDefault(f => File.Exists(f));
+        }
+
+        private static void WrapInOuterZip(string sourceFolder, string outerZipPath)
+        {
+            using var outer = ZipFile.Open(outerZipPath, ZipArchiveMode.Create);
+            foreach (var file in Directory.GetFiles(sourceFolder, "*.zip"))
+                outer.CreateEntryFromFile(file, Path.GetFileName(file), CompressionLevel.NoCompression);
         }
 
         private void DeleteTempFolder(string folder)
