@@ -17,6 +17,7 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
     public partial class GenerateJsonZipsWindow : Window
     {
         private const string SettingsFile = "Settings/generate_json_zips_settings.json";
+        private const string WorkloadMapsFolder = "WorkloadMaps";
 
         private bool _isNavigatingBack = false;
         private CancellationTokenSource? _cts;
@@ -142,8 +143,10 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 { error = "Output Folder is required."; return false; }
             if (string.IsNullOrWhiteSpace(TxtAppParamsCsv.Text) || !File.Exists(TxtAppParamsCsv.Text.Trim()))
                 { error = "App Params CSV is required and must exist."; return false; }
-            if (string.IsNullOrWhiteSpace(TxtWorkloadMapCsv.Text) || !File.Exists(TxtWorkloadMapCsv.Text.Trim()))
-                { error = "Workload Map CSV is required and must exist."; return false; }
+            // Workload Map CSV is optional. If a path is supplied, it must exist.
+            // When omitted, a random GUID is generated as the WorkloadID for each drawing.
+            if (!string.IsNullOrWhiteSpace(TxtWorkloadMapCsv.Text) && !File.Exists(TxtWorkloadMapCsv.Text.Trim()))
+                { error = "Workload Map CSV was provided but does not exist."; return false; }
             if (string.IsNullOrWhiteSpace(TxtAutoCADPath.Text) || !File.Exists(TxtAutoCADPath.Text.Trim()))
                 { error = "AutoCAD path is required and must exist."; return false; }
             if (string.IsNullOrWhiteSpace(TxtCommonUtilsDll.Text) || !File.Exists(TxtCommonUtilsDll.Text.Trim()))
@@ -175,6 +178,16 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             _mappingsValidated = false;
             SetStatus("🔍 Validating mappings...");
             TxtLog.Clear();
+
+            // If no Workload Map CSV was supplied, generate one now: map every
+            // discovered drawing to a fresh GUID and save it under WorkloadMaps/
+            // with a datetime-stamped name, then use it for validation and the run.
+            if (string.IsNullOrWhiteSpace(TxtWorkloadMapCsv.Text))
+            {
+                string? generated = GenerateWorkloadMapCsv(TxtDrawingsFolder.Text.Trim());
+                if (generated != null)
+                    TxtWorkloadMapCsv.Text = generated;
+            }
 
             var settings = BuildSettings();
             var processor = new GenerateJsonZipsProcessor(
@@ -340,7 +353,80 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
         private void BtnBrowseWorkloadMapCsv_Click(object sender, RoutedEventArgs e)
         {
             var file = BrowseFile("CSV Files|*.csv|All Files|*.*", "Select Workload Map CSV");
-            if (file != null) { TxtWorkloadMapCsv.Text = file; InvalidateMappings(); }
+            if (file == null) return;
+
+            // Store a copy inside the project so the CSV travels with the app.
+            string stored = CopyIntoProjectFolder(file, WorkloadMapsFolder);
+            TxtWorkloadMapCsv.Text = stored;
+            InvalidateMappings();
+        }
+
+        /// <summary>
+        /// Copies the given file into the project sub-folder and returns the copy's path.
+        /// If the file is already inside that folder, it's returned unchanged.
+        /// On any failure, falls back to the original path.
+        /// </summary>
+        private string CopyIntoProjectFolder(string sourcePath, string projectFolder)
+        {
+            try
+            {
+                Directory.CreateDirectory(projectFolder);
+                string destPath = Path.Combine(projectFolder, Path.GetFileName(sourcePath));
+
+                string fullSource = Path.GetFullPath(sourcePath);
+                string fullDest = Path.GetFullPath(destPath);
+                if (string.Equals(fullSource, fullDest, StringComparison.OrdinalIgnoreCase))
+                    return destPath;
+
+                File.Copy(sourcePath, destPath, overwrite: true);
+                Log($"📁 Stored Workload Map CSV in project: {destPath}");
+                return destPath;
+            }
+            catch (Exception ex)
+            {
+                Log($"⚠️  Could not copy CSV into project folder: {ex.Message}. Using original path.");
+                return sourcePath;
+            }
+        }
+
+        /// <summary>
+        /// Generates a Workload Map CSV for every .dwg in the drawings folder,
+        /// assigning each a fresh GUID as its WorkloadID. The file is saved into
+        /// the WorkloadMaps/ project folder with a datetime-stamped name and its
+        /// path is returned. Returns null if no drawings are found or on failure.
+        /// </summary>
+        private string? GenerateWorkloadMapCsv(string drawingsFolder)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(drawingsFolder) || !Directory.Exists(drawingsFolder))
+                    return null;
+
+                var drawings = Directory.GetFiles(drawingsFolder, "*.dwg", SearchOption.TopDirectoryOnly);
+                if (drawings.Length == 0)
+                {
+                    Log("⚠️  No .dwg files found — skipping workload map generation.");
+                    return null;
+                }
+
+                Directory.CreateDirectory(WorkloadMapsFolder);
+                string fileName = $"workload_map_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+                string destPath = Path.Combine(WorkloadMapsFolder, fileName);
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("Marking File Link,WorkloadID");
+                foreach (var dwg in drawings)
+                    sb.AppendLine($"{Path.GetFileName(dwg)},{Guid.NewGuid()}");
+
+                File.WriteAllText(destPath, sb.ToString());
+                Log($"🆔 Generated workload map for {drawings.Length} drawing(s): {destPath}");
+                return destPath;
+            }
+            catch (Exception ex)
+            {
+                Log($"⚠️  Could not generate workload map: {ex.Message}");
+                return null;
+            }
         }
 
         private void BtnBrowseAutoCAD_Click(object sender, RoutedEventArgs e)

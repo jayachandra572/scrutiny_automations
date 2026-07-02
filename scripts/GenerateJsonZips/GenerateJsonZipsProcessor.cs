@@ -57,11 +57,18 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 return result;
             }
 
-            var workloadReader = new WorkloadMapCsvReader(_workloadMapCsvPath);
-            if (!workloadReader.LoadCsv())
+            // Workload Map CSV is optional. When omitted, a random GUID is generated
+            // per drawing as its WorkloadID, so there are no "missing workload ID" failures.
+            bool hasWorkloadMap = !string.IsNullOrWhiteSpace(_workloadMapCsvPath);
+            WorkloadMapCsvReader? workloadReader = null;
+            if (hasWorkloadMap)
             {
-                result.ErrorMessage = "Failed to load Workload Map CSV.";
-                return result;
+                workloadReader = new WorkloadMapCsvReader(_workloadMapCsvPath);
+                if (!workloadReader.LoadCsv())
+                {
+                    result.ErrorMessage = "Failed to load Workload Map CSV.";
+                    return result;
+                }
             }
 
             var drawings = DiscoverDrawings();
@@ -78,7 +85,7 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 string name = Path.GetFileName(dwg);
                 if (!appMapper.HasDrawing(dwg))
                     result.MissingAppParams.Add(name);
-                if (!workloadReader.HasWorkloadId(dwg))
+                if (hasWorkloadMap && !workloadReader!.HasWorkloadId(dwg))
                     result.MissingWorkloadIds.Add(name);
             }
 
@@ -108,8 +115,11 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             _appParamsMapper = new CsvParameterMapper(_appParamsCsvPath);
             _appParamsMapper.LoadCsv();
 
-            _workloadReader = new WorkloadMapCsvReader(_workloadMapCsvPath);
-            _workloadReader.LoadCsv();
+            if (!string.IsNullOrWhiteSpace(_workloadMapCsvPath))
+            {
+                _workloadReader = new WorkloadMapCsvReader(_workloadMapCsvPath);
+                _workloadReader.LoadCsv();
+            }
 
             // Phase 2 — discover drawings
             var drawings = DiscoverDrawings();
@@ -200,7 +210,7 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             result.Duration = totalTimer.Elapsed;
 
             _log($"");
-            _log($"✅ Done. {succeeded} drawing(s) packaged, {skipped.Count} skipped (no WorkloadID).");
+            _log($"✅ Done. {succeeded} drawing(s) packaged.");
             _log($"⏱️  Pass 1 (Drawing Validations) : {FormatElapsed(sw1.Elapsed)}");
             _log($"⏱️  Pass 2 (Pre-Scrutiny)        : {FormatElapsed(sw2.Elapsed)}");
             _log($"⏱️  Pass 3 (Scrutiny Reports)    : {FormatElapsed(sw3.Elapsed)}");
@@ -293,9 +303,10 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
 
                 if (string.IsNullOrWhiteSpace(workloadId))
                 {
-                    skipped.Add(Path.GetFileName(dwgPath));
-                    _log($"   ⚠️  Skipped (no WorkloadID): {Path.GetFileName(dwgPath)}");
-                    continue;
+                    // No mapping (either no Workload Map CSV was provided, or this drawing
+                    // isn't in it) — generate a random 36-char GUID as the WorkloadID.
+                    workloadId = Guid.NewGuid().ToString();
+                    _log($"   🆔 Generated WorkloadID for {drawingName}: {workloadId}");
                 }
 
                 // Each workload is stored as {workloadId}.zip inside the outer zip
