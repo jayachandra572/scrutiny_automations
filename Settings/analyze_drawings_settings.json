@@ -1,9 +1,9 @@
 {
-  "UseDrawingFolder": true,
-  "LinksFile": "C:\\Users\\Jaya\\Documents\\amentity_work_load_ids.txt",
+  "UseDrawingFolder": false,
+  "LinksFile": "C:\\Users\\Jaya\\Documents\\podium_drawing_links.txt",
   "DrawingFilesFolder": "C:\\Users\\Jaya\\Downloads\\PodiumFiles",
-  "DownloadFolder": "C:\\Users\\Jaya\\Downloads\\AmenityDrawings\\FailedDrawings",
-  "OutputFolder": "D:\\UrbanFloww\\Automations\\Reports\\AmenityAnalysis",
+  "DownloadFolder": "C:\\Users\\Jaya\\Downloads\\PodiumFiles\\ProdPodiumFiles",
+  "OutputFolder": "D:\\UrbanFloww\\Automations\\PodiumToPlotAnalysis",
   "DllPath": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",
   "AutoCADPath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\accoreconsole.exe",
   "CommandName": "GeneratePodiumToPlotSetbackDifferences",

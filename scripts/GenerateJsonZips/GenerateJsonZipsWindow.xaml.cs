@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
@@ -469,8 +469,8 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                     case ModeSelectionWindow.SelectedMode.ScrutinyReports:
                         newWindow = new Scripts.ScrutinyReports.ScrutinyReportsWindow();
                         break;
-                    case ModeSelectionWindow.SelectedMode.BulkDownloadAndProcess:
-                        newWindow = new Scripts.BulkDownload.BulkDownloadAndProcessWindow();
+                    case ModeSelectionWindow.SelectedMode.AnalyzeDrawings:
+                        newWindow = new Scripts.AnalyzeDrawings.AnalyzeDrawingsWindow();
                         break;
                     case ModeSelectionWindow.SelectedMode.JsonDiffComparison:
                         newWindow = new JsonDiffWindow();

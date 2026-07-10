@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -20,9 +20,9 @@ using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WinFormsFolderBrowser = System.Windows.Forms.FolderBrowserDialog;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
 
-namespace BatchProcessor.Scripts.BulkDownload
+namespace BatchProcessor.Scripts.AnalyzeDrawings
 {
-    public partial class BulkDownloadAndProcessWindow : Window
+    public partial class AnalyzeDrawingsWindow : Window
     {
         private bool _isNavigatingBack = false;
         private CancellationTokenSource? _cancellationTokenSource;
@@ -31,10 +31,11 @@ namespace BatchProcessor.Scripts.BulkDownload
         private int _completedFiles = 0;
         private DateTime? _processingStartTime = null;
 
-        public BulkDownloadAndProcessWindow()
+        public AnalyzeDrawingsWindow()
         {
             InitializeComponent();
             LoadUserSettings();
+            UpdateSourceFieldStates();
 
             this.Closing += (s, args) =>
             {
@@ -44,6 +45,42 @@ namespace BatchProcessor.Scripts.BulkDownload
                 }
             };
         }
+
+        #region Drawing Source Selection
+
+        private void SourceMode_Changed(object sender, RoutedEventArgs e)
+        {
+            UpdateSourceFieldStates();
+        }
+
+        private void UpdateSourceFieldStates()
+        {
+            // Checked events fire during InitializeComponent, before all controls exist
+            if (TxtLinksFile == null || TxtDownloadFolder == null || TxtDrawingFilesFolder == null ||
+                BtnBrowseLinksFile == null || BtnBrowseDownloadFolder == null || BtnBrowseDrawingFilesFolder == null ||
+                LblLinksFile == null || LblDownloadFolder == null || LblDrawingFilesFolder == null)
+            {
+                return;
+            }
+
+            bool useDrawingFolder = RbSourceFolder?.IsChecked == true;
+
+            var linksVisibility = useDrawingFolder ? Visibility.Collapsed : Visibility.Visible;
+            var folderVisibility = useDrawingFolder ? Visibility.Visible : Visibility.Collapsed;
+
+            LblLinksFile.Visibility = linksVisibility;
+            TxtLinksFile.Visibility = linksVisibility;
+            BtnBrowseLinksFile.Visibility = linksVisibility;
+            LblDownloadFolder.Visibility = linksVisibility;
+            TxtDownloadFolder.Visibility = linksVisibility;
+            BtnBrowseDownloadFolder.Visibility = linksVisibility;
+
+            LblDrawingFilesFolder.Visibility = folderVisibility;
+            TxtDrawingFilesFolder.Visibility = folderVisibility;
+            BtnBrowseDrawingFilesFolder.Visibility = folderVisibility;
+        }
+
+        #endregion
 
         #region Browse Buttons
 
@@ -60,6 +97,21 @@ namespace BatchProcessor.Scripts.BulkDownload
             {
                 TxtLinksFile.Text = dialog.FileName;
                 LogMessage($"📄 Links file selected: {Path.GetFileName(dialog.FileName)}");
+            }
+        }
+
+        private void BtnBrowseDrawingFilesFolder_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new WinFormsFolderBrowser
+            {
+                Description = "Select the local folder containing the DWG files to process",
+                ShowNewFolderButton = false
+            };
+
+            if (dialog.ShowDialog() == WinFormsDialogResult.OK)
+            {
+                TxtDrawingFilesFolder.Text = dialog.SelectedPath;
+                LogMessage($"📁 Drawing files folder selected: {dialog.SelectedPath}");
             }
         }
 
@@ -137,7 +189,9 @@ namespace BatchProcessor.Scripts.BulkDownload
             {
                 var settings = new UserSettings
                 {
+                    UseDrawingFolder = RbSourceFolder.IsChecked == true,
                     LinksFile = TxtLinksFile.Text,
+                    DrawingFilesFolder = TxtDrawingFilesFolder.Text,
                     DownloadFolder = TxtDownloadFolder.Text,
                     OutputFolder = TxtOutputFolder.Text,
                     DllPath = TxtDllPath.Text,
@@ -147,7 +201,7 @@ namespace BatchProcessor.Scripts.BulkDownload
                     VerboseLogging = ChkVerbose.IsChecked ?? false
                 };
 
-                var settingsFile = Path.Combine(Directory.GetCurrentDirectory(), "Settings", "bulk_download_settings.json");
+                var settingsFile = Path.Combine(Directory.GetCurrentDirectory(), "Settings", "analyze_drawings_settings.json");
                 Directory.CreateDirectory(Path.GetDirectoryName(settingsFile)!);
                 var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(settingsFile, json);
@@ -162,7 +216,13 @@ namespace BatchProcessor.Scripts.BulkDownload
         {
             try
             {
-                var settingsFile = Path.Combine(Directory.GetCurrentDirectory(), "Settings", "bulk_download_settings.json");
+                var settingsFile = Path.Combine(Directory.GetCurrentDirectory(), "Settings", "analyze_drawings_settings.json");
+                if (!File.Exists(settingsFile))
+                {
+                    // Fall back to the settings file from before the feature was renamed
+                    settingsFile = Path.Combine(Directory.GetCurrentDirectory(), "Settings", "bulk_download_settings.json");
+                }
+
                 if (File.Exists(settingsFile))
                 {
                     var json = File.ReadAllText(settingsFile);
@@ -170,7 +230,10 @@ namespace BatchProcessor.Scripts.BulkDownload
 
                     if (settings != null)
                     {
+                        RbSourceLinks.IsChecked = !settings.UseDrawingFolder;
+                        RbSourceFolder.IsChecked = settings.UseDrawingFolder;
                         TxtLinksFile.Text = settings.LinksFile ?? "";
+                        TxtDrawingFilesFolder.Text = settings.DrawingFilesFolder ?? "";
                         TxtDownloadFolder.Text = settings.DownloadFolder ?? "";
                         TxtOutputFolder.Text = settings.OutputFolder ?? "";
                         TxtDllPath.Text = settings.DllPath ?? "";
@@ -272,7 +335,7 @@ namespace BatchProcessor.Scripts.BulkDownload
                 {
                     _cancellationTokenSource?.Dispose();
                     _currentProcessingTask = null;
-                    BtnRun.Content = "▶ Download & Process";
+                    BtnRun.Content = "  Download & Process";
                     TxtStatus.Text = "Processing cancelled";
                 }
                 return;
@@ -293,7 +356,9 @@ namespace BatchProcessor.Scripts.BulkDownload
 
             try
             {
+                bool useDrawingFolder = RbSourceFolder.IsChecked == true;
                 string linksFile = TxtLinksFile.Text;
+                string drawingFilesFolder = TxtDrawingFilesFolder.Text?.Trim() ?? "";
                 string downloadFolder = TxtDownloadFolder.Text;
                 string outputFolder = TxtOutputFolder.Text;
                 string commandName = TxtCommandName.Text;
@@ -303,8 +368,17 @@ namespace BatchProcessor.Scripts.BulkDownload
                 var dllsToLoad = new List<string> { TxtDllPath.Text };
 
                 LogMessage("═══════════════════════════════════════════════════════════════");
-                LogMessage($"Starting bulk download and processing");
-                LogMessage($"Download Folder: {downloadFolder}");
+                if (useDrawingFolder)
+                {
+                    LogMessage($"Starting bulk processing from local drawing folder");
+                    LogMessage($"Drawing Folder:  {drawingFilesFolder}");
+                }
+                else
+                {
+                    LogMessage($"Starting drawing analysis (download from links)");
+                    LogMessage($"Links File:      {linksFile}");
+                    LogMessage($"Download Folder: {downloadFolder}");
+                }
                 LogMessage($"Output Folder:   {outputFolder}");
                 LogMessage($"Command:         {commandName}");
                 LogMessage($"Max Parallel:    {maxParallel}");
@@ -313,19 +387,38 @@ namespace BatchProcessor.Scripts.BulkDownload
                 _cancellationTokenSource = new CancellationTokenSource();
                 var cancellationToken = _cancellationTokenSource.Token;
 
-                var processor = new DrawingBatchProcessor(
-                   accoreconsoleExePath: TxtAutoCADPath.Text,
-                   dllsToLoad: dllsToLoad,
-                   mainCommand: commandName,
-                   maxParallelism: 1, // Process one file at a time per pipeline
-                   tempScriptFolder: "",
-                   enableVerboseLogging: verbose
-                );
+                if (useDrawingFolder)
+                {
+                    // Process DWG files already present in the local folder (no download)
+                    var processor = new DrawingBatchProcessor(
+                        accoreconsoleExePath: TxtAutoCADPath.Text,
+                        dllsToLoad: dllsToLoad,
+                        mainCommand: commandName,
+                        maxParallelism: maxParallel,
+                        tempScriptFolder: "",
+                        enableVerboseLogging: verbose
+                    );
 
-            
-
-                // Start the download and processing task
-                await DownloadAndProcessAsync(linksFile, downloadFolder, outputFolder, commandName, dllsToLoad, maxParallel, verbose, cancellationToken);
+                    var originalOut = Console.Out;
+                    Console.SetOut(new TextBoxWriter(this));
+                    try
+                    {
+                        await processor.ProcessFolderAsync(
+                            inputFolder: drawingFilesFolder,
+                            outputFolder: outputFolder,
+                            inputJsonPath: string.Empty,
+                            cancellationToken: cancellationToken);
+                    }
+                    finally
+                    {
+                        Console.SetOut(originalOut);
+                    }
+                }
+                else
+                {
+                    // Download from links, then process each file
+                    await DownloadAndProcessAsync(linksFile, downloadFolder, outputFolder, commandName, dllsToLoad, maxParallel, verbose, cancellationToken);
+                }
 
                 if (_processingStartTime.HasValue)
                 {
@@ -343,21 +436,21 @@ namespace BatchProcessor.Scripts.BulkDownload
             {
                 TxtStatus.Text = "❌ Processing cancelled";
                 LogMessage("\n❌ Processing was cancelled by user.");
-                BtnRun.Content = "▶ Download & Process";
+                BtnRun.Content = "  Download & Process";
             }
             catch (Exception ex)
             {
                 TxtStatus.Text = "Error occurred";
                 LogMessage($"\n❌ Error: {ex.Message}");
                 WpfMessageBox.Show($"Error during processing:\n{ex.Message}", "Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
-                BtnRun.Content = "▶ Download & Process";
+                BtnRun.Content = "  Download & Process";
             }
             finally
             {
                 _currentProcessingTask = null;
                 _cancellationTokenSource?.Dispose();
                 _cancellationTokenSource = null;
-                BtnRun.Content = "▶ Download & Process";
+                BtnRun.Content = "  Download & Process";
             }
         }
 
@@ -558,16 +651,35 @@ namespace BatchProcessor.Scripts.BulkDownload
 
         private bool ValidateInputs()
         {
-            if (string.IsNullOrWhiteSpace(TxtLinksFile.Text) || !File.Exists(TxtLinksFile.Text))
-            {
-                WpfMessageBox.Show("Please select a valid links file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
-            }
+            bool useDrawingFolder = RbSourceFolder.IsChecked == true;
 
-            if (string.IsNullOrWhiteSpace(TxtDownloadFolder.Text))
+            if (useDrawingFolder)
             {
-                WpfMessageBox.Show("Please select a download folder", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
+                if (string.IsNullOrWhiteSpace(TxtDrawingFilesFolder.Text) || !Directory.Exists(TxtDrawingFilesFolder.Text))
+                {
+                    WpfMessageBox.Show("Please select a valid drawing folder", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    return false;
+                }
+
+                if (Directory.GetFiles(TxtDrawingFilesFolder.Text, "*.dwg", SearchOption.TopDirectoryOnly).Length == 0)
+                {
+                    WpfMessageBox.Show("No DWG files found in the selected drawing folder", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    return false;
+                }
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(TxtLinksFile.Text) || !File.Exists(TxtLinksFile.Text))
+                {
+                    WpfMessageBox.Show("Please select a valid links file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(TxtDownloadFolder.Text))
+                {
+                    WpfMessageBox.Show("Please select a download folder", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    return false;
+                }
             }
 
             if (string.IsNullOrWhiteSpace(TxtOutputFolder.Text))
@@ -646,9 +758,9 @@ namespace BatchProcessor.Scripts.BulkDownload
 
         private class TextBoxWriter : System.IO.TextWriter
         {
-            private BulkDownloadAndProcessWindow _window;
+            private AnalyzeDrawingsWindow _window;
 
-            public TextBoxWriter(BulkDownloadAndProcessWindow window)
+            public TextBoxWriter(AnalyzeDrawingsWindow window)
             {
                 _window = window;
             }
@@ -718,9 +830,9 @@ namespace BatchProcessor.Scripts.BulkDownload
                         newWindow = new Scripts.GenerateJsonZips.GenerateJsonZipsWindow();
                         break;
 
-                    case ModeSelectionWindow.SelectedMode.BulkDownloadAndProcess:
+                    case ModeSelectionWindow.SelectedMode.AnalyzeDrawings:
                     default:
-                        newWindow = new BulkDownloadAndProcessWindow();
+                        newWindow = new AnalyzeDrawingsWindow();
                         break;
                 }
 
@@ -745,7 +857,9 @@ namespace BatchProcessor.Scripts.BulkDownload
 
     public class UserSettings
     {
+        public bool UseDrawingFolder { get; set; }
         public string? LinksFile { get; set; }
+        public string? DrawingFilesFolder { get; set; }
         public string? DownloadFolder { get; set; }
         public string? OutputFolder { get; set; }
         public string? DllPath { get; set; }

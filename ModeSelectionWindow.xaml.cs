@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 
 namespace BatchProcessor
 {
@@ -8,7 +8,7 @@ namespace BatchProcessor
         {
             PreScrutinyValidations,
             ScrutinyReports,
-            BulkDownloadAndProcess,
+            AnalyzeDrawings,
             JsonDiffComparison,
             RelationsCreation,
             GenerateJsonZips
@@ -65,12 +65,12 @@ namespace BatchProcessor
 
         private void BtnDownloadMode_Click(object sender, RoutedEventArgs e)
         {
-            SelectMode(SelectedMode.BulkDownloadAndProcess);
+            SelectMode(SelectedMode.AnalyzeDrawings);
         }
 
         private void Border_DownloadMode_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            SelectMode(SelectedMode.BulkDownloadAndProcess);
+            SelectMode(SelectedMode.AnalyzeDrawings);
         }
 
         private void BtnGenerateJsonZipsMode_Click(object sender, RoutedEventArgs e)

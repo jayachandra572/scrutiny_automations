@@ -1,4 +1,4 @@
-<Window x:Class="BatchProcessor.ModeSelectionWindow"
+﻿<Window x:Class="BatchProcessor.ModeSelectionWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Batch Processor - Select Mode" Height="850" Width="950"
@@ -193,7 +193,7 @@
                 </Grid>
             </Border>
 
-            <!-- Bulk Download and Process Mode -->
+            <!-- Analyze Drawings Mode -->
             <Border Grid.Row="2"
                    Background="White"
                    CornerRadius="8"
@@ -229,7 +229,7 @@
 
                     <!-- Content -->
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="Bulk Download and Process"
+                        <TextBlock Text="Analyze Drawings"
                                   FontSize="18"
                                   FontWeight="Bold"
                                   Margin="0,0,0,8"
@@ -238,7 +238,7 @@
                                   Foreground="#7F8C8D"
                                   FontSize="12"
                                   LineHeight="18">
-                            <Run Text="Download DWG files from provided links and process them with a custom command."/>
+                            <Run Text="Analyze DWG drawings from download links or a local drawing folder with a custom command."/>
                         </TextBlock>
                     </StackPanel>
 

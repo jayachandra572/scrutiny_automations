@@ -1,10 +1,10 @@
-<Window x:Class="BatchProcessor.Scripts.BulkDownload.BulkDownloadAndProcessWindow"
+﻿<Window x:Class="BatchProcessor.Scripts.AnalyzeDrawings.AnalyzeDrawingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="Bulk Download and Process" Height="750" Width="900"
+        Title="Analyze Drawings" Height="750" Width="900"
         MinHeight="500" MinWidth="700"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize">
@@ -49,16 +49,18 @@
 
                 <!-- Title -->
                 <StackPanel Grid.Column="1">
-                    <TextBlock Text="Bulk Download and Process" FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
-                    <TextBlock Text="Download DWG files and process them with a custom command" FontSize="12" Foreground="#ECF0F1" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                    <TextBlock Text="Analyze Drawings" FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Analyze DWG drawings from download links or a local drawing folder" FontSize="12" Foreground="#ECF0F1" HorizontalAlignment="Center" Margin="0,5,0,0"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Links File and Folders -->
-        <GroupBox Grid.Row="1" Header="Download Links and Folders" Margin="0,0,0,10" Padding="10">
+        <!-- Drawing Source and Folders -->
+        <GroupBox Grid.Row="1" Header="Drawing Source and Folders" Margin="0,0,0,10" Padding="10">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -69,20 +71,36 @@
                     <ColumnDefinition Width="100"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Links File -->
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Links File:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="Text file with download URLs (one per line)"/>
-                <TextBox Grid.Row="0" Grid.Column="1" x:Name="TxtLinksFile" Margin="5" Padding="5" VerticalAlignment="Center"/>
-                <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseLinksFile_Click"/>
+                <!-- Source Selection -->
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Drawing Source:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <StackPanel Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="5">
+                    <RadioButton x:Name="RbSourceLinks" Content="Download from links" GroupName="DrawingSource" IsChecked="True"
+                                 VerticalAlignment="Center" Margin="0,0,20,0" Checked="SourceMode_Changed"
+                                 ToolTip="Download DWG files from the URLs in the links file"/>
+                    <RadioButton x:Name="RbSourceFolder" Content="Local drawing folder" GroupName="DrawingSource"
+                                 VerticalAlignment="Center" Checked="SourceMode_Changed"
+                                 ToolTip="Process all DWG files already present in a local folder (no download)"/>
+                </StackPanel>
 
-                <!-- Download Folder -->
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Download Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
-                <TextBox Grid.Row="1" Grid.Column="1" x:Name="TxtDownloadFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
-                <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseDownloadFolder_Click"/>
+                <!-- Links File (links mode only) -->
+                <TextBlock Grid.Row="1" Grid.Column="0" x:Name="LblLinksFile" Text="Links File:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="Text file with download URLs (one per line)"/>
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="TxtLinksFile" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="1" Grid.Column="2" x:Name="BtnBrowseLinksFile" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseLinksFile_Click"/>
+
+                <!-- Download Folder (links mode only) -->
+                <TextBlock Grid.Row="2" Grid.Column="0" x:Name="LblDownloadFolder" Text="Download Folder:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="Where downloaded DWG files are stored"/>
+                <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtDownloadFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="2" Grid.Column="2" x:Name="BtnBrowseDownloadFolder" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseDownloadFolder_Click"/>
+
+                <!-- Drawing Files Folder (drawing folder mode only) -->
+                <TextBlock Grid.Row="3" Grid.Column="0" x:Name="LblDrawingFilesFolder" Text="Drawing Folder:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="Local folder with the DWG files to process"/>
+                <TextBox Grid.Row="3" Grid.Column="1" x:Name="TxtDrawingFilesFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="3" Grid.Column="2" x:Name="BtnBrowseDrawingFilesFolder" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseDrawingFilesFolder_Click"/>
 
                 <!-- Output Folder -->
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Output Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
-                <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtOutputFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
-                <Button Grid.Row="2" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseOutputFolder_Click"/>
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="Output Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <TextBox Grid.Row="4" Grid.Column="1" x:Name="TxtOutputFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="4" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseOutputFolder_Click"/>
             </Grid>
         </GroupBox>
 
@@ -153,7 +171,7 @@
 
         <!-- Action Buttons -->
         <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,10">
-            <Button x:Name="BtnRun" Content="▶ Download and Process" Width="250" Height="40" FontSize="16" FontWeight="Bold"
+            <Button x:Name="BtnRun" Content="▶ Analyze Drawings" Width="250" Height="40" FontSize="16" FontWeight="Bold"
                     Background="#E74C3C" Foreground="White" Click="BtnRun_Click" Margin="5"/>
         </StackPanel>
 

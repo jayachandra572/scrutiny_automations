@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -468,8 +468,8 @@ namespace BatchProcessor.Relations
                         newWindow = new Scripts.ScrutinyReports.ScrutinyReportsWindow();
                         break;
 
-                    case ModeSelectionWindow.SelectedMode.BulkDownloadAndProcess:
-                        newWindow = new Scripts.BulkDownload.BulkDownloadAndProcessWindow();
+                    case ModeSelectionWindow.SelectedMode.AnalyzeDrawings:
+                        newWindow = new Scripts.AnalyzeDrawings.AnalyzeDrawingsWindow();
                         break;
 
                     case ModeSelectionWindow.SelectedMode.GenerateJsonZips:

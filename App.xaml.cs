@@ -1,8 +1,8 @@
-using System.Windows;
+﻿using System.Windows;
 using BatchProcessor.JsonDiff;
 using BatchProcessor.Scripts.PreScrutiny;
 using BatchProcessor.Scripts.ScrutinyReports;
-using BatchProcessor.Scripts.BulkDownload;
+using BatchProcessor.Scripts.AnalyzeDrawings;
 using BatchProcessor.Relations;
 using BatchProcessor.Scripts.GenerateJsonZips;
 
@@ -34,9 +34,9 @@ namespace BatchProcessor
                         mainWindow = new ScrutinyReportsWindow();
                         break;
 
-                    case ModeSelectionWindow.SelectedMode.BulkDownloadAndProcess:
-                        // Open Bulk Download & Process window
-                        mainWindow = new BulkDownloadAndProcessWindow();
+                    case ModeSelectionWindow.SelectedMode.AnalyzeDrawings:
+                        // Open Analyze Drawings window
+                        mainWindow = new AnalyzeDrawingsWindow();
                         break;
 
                     case ModeSelectionWindow.SelectedMode.RelationsCreation:
