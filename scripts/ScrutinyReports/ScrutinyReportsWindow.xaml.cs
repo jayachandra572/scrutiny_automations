@@ -569,7 +569,7 @@ namespace BatchProcessor.Scripts.ScrutinyReports
                 LogMessage($"Starting batch processing with {command}");
                 LogMessage($"Input:  {inputFolder}");
                 LogMessage($"Output: {outputFolder}");
-                LogMessage($"CSV:    {csvFile}");
+                LogMessage($"CSV:    {(string.IsNullOrWhiteSpace(csvFile) ? "(none - using default parameters)" : csvFile)}");
                 LogMessage("═══════════════════════════════════════════════════════════════\n");
 
                 var processor = new DrawingBatchProcessor(
@@ -732,15 +732,10 @@ namespace BatchProcessor.Scripts.ScrutinyReports
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(TxtCsvFile.Text))
+            // CSV is optional - only checked when provided
+            if (!string.IsNullOrWhiteSpace(TxtCsvFile.Text) && !File.Exists(TxtCsvFile.Text))
             {
-                WpfMessageBox.Show("Please select a CSV parameter file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
-            }
-
-            if (!File.Exists(TxtCsvFile.Text))
-            {
-                WpfMessageBox.Show("CSV file does not exist", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                WpfMessageBox.Show("CSV file does not exist. Leave the field empty to use default parameters.", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                 return false;
             }
 

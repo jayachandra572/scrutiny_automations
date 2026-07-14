@@ -1,7 +1,7 @@
 {
-  "InputFolder": "C:\\Users\\Jaya\\Downloads\\test_files",
-  "OutputFolder": "D:\\UrbanFloww\\Automations\\Reports",
-  "CsvFile": "C:\\Users\\Jaya\\Downloads\\internal_files.csv",
+  "InputFolder": "C:\\Users\\Jaya\\Downloads\\PodiumFiles\\ProdPodiumFiles",
+  "OutputFolder": "D:\\UrbanFloww\\Automations\\PodiumReportJsons",
+  "CsvFile": "",
   "CrxDll": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",
   "AutoCADPath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\accoreconsole.exe",
   "SelectedCommand": "GenerateScrutinyReportBatch",

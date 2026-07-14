@@ -620,8 +620,9 @@ namespace BatchProcessor.Scripts.PreScrutiny
                 LogMessage($"Starting batch processing with {command}");
                 LogMessage($"Input:  {inputFolder}");
                 LogMessage($"Output: {outputFolder}");
-                LogMessage($"CSV:    {csvFile}");
-                LogMessage($"Mode:   CSV-based parameter mapping");
+                bool hasCsv = !string.IsNullOrWhiteSpace(csvFile);
+                LogMessage($"CSV:    {(hasCsv ? csvFile : "(none)")}");
+                LogMessage($"Mode:   {(hasCsv ? "CSV-based parameter mapping" : "Default parameters for all drawings")}");
                 LogMessage("═══════════════════════════════════════════════════════════════\n");
 
                 // Create processor
@@ -887,16 +888,10 @@ namespace BatchProcessor.Scripts.PreScrutiny
                 return false;
             }
 
-            // Validate CSV file
-            if (string.IsNullOrWhiteSpace(TxtCsvFile.Text))
+            // Validate CSV file (optional - only checked when provided)
+            if (!string.IsNullOrWhiteSpace(TxtCsvFile.Text) && !File.Exists(TxtCsvFile.Text))
             {
-                WpfMessageBox.Show("Please select a CSV parameter file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
-            }
-
-            if (!File.Exists(TxtCsvFile.Text))
-            {
-                WpfMessageBox.Show("CSV file does not exist", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                WpfMessageBox.Show("CSV file does not exist. Leave the field empty to use default parameters.", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
                 return false;
             }
 
