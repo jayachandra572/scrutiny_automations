@@ -53,17 +53,33 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
             UpdateSourceFieldStates();
         }
 
+        private void DownloadOnly_Changed(object sender, RoutedEventArgs e)
+        {
+            UpdateSourceFieldStates();
+        }
+
+        /// <summary>
+        /// True when the user only wants the DWG files downloaded, with no AutoCAD analysis.
+        /// Only meaningful in links mode - there is nothing to download from a local folder.
+        /// </summary>
+        private bool IsDownloadOnly =>
+            RbSourceLinks?.IsChecked == true && ChkDownloadOnly?.IsChecked == true;
+
         private void UpdateSourceFieldStates()
         {
             // Checked events fire during InitializeComponent, before all controls exist
             if (TxtLinksFile == null || TxtDownloadFolder == null || TxtDrawingFilesFolder == null ||
                 BtnBrowseLinksFile == null || BtnBrowseDownloadFolder == null || BtnBrowseDrawingFilesFolder == null ||
-                LblLinksFile == null || LblDownloadFolder == null || LblDrawingFilesFolder == null)
+                LblLinksFile == null || LblDownloadFolder == null || LblDrawingFilesFolder == null ||
+                ChkDownloadOnly == null || LblOutputFolder == null || TxtOutputFolder == null ||
+                BtnBrowseOutputFolder == null || GrpDllPath == null || GrpAutoCADSettings == null ||
+                LblCommandName == null || TxtCommandName == null || BtnRun == null)
             {
                 return;
             }
 
             bool useDrawingFolder = RbSourceFolder?.IsChecked == true;
+            bool downloadOnly = IsDownloadOnly;
 
             var linksVisibility = useDrawingFolder ? Visibility.Collapsed : Visibility.Visible;
             var folderVisibility = useDrawingFolder ? Visibility.Visible : Visibility.Collapsed;
@@ -74,10 +90,24 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
             LblDownloadFolder.Visibility = linksVisibility;
             TxtDownloadFolder.Visibility = linksVisibility;
             BtnBrowseDownloadFolder.Visibility = linksVisibility;
+            ChkDownloadOnly.Visibility = linksVisibility;
 
             LblDrawingFilesFolder.Visibility = folderVisibility;
             TxtDrawingFilesFolder.Visibility = folderVisibility;
             BtnBrowseDrawingFilesFolder.Visibility = folderVisibility;
+
+            // Analysis-only inputs are irrelevant when nothing is processed
+            var analysisVisibility = downloadOnly ? Visibility.Collapsed : Visibility.Visible;
+
+            LblOutputFolder.Visibility = analysisVisibility;
+            TxtOutputFolder.Visibility = analysisVisibility;
+            BtnBrowseOutputFolder.Visibility = analysisVisibility;
+            GrpDllPath.Visibility = analysisVisibility;
+            GrpAutoCADSettings.Visibility = analysisVisibility;
+            LblCommandName.Visibility = analysisVisibility;
+            TxtCommandName.Visibility = analysisVisibility;
+
+            BtnRun.Content = downloadOnly ? "▶ Download Drawings" : "▶ Analyze Drawings";
         }
 
         #endregion
@@ -190,6 +220,7 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                 var settings = new UserSettings
                 {
                     UseDrawingFolder = RbSourceFolder.IsChecked == true,
+                    DownloadOnly = ChkDownloadOnly.IsChecked == true,
                     LinksFile = TxtLinksFile.Text,
                     DrawingFilesFolder = TxtDrawingFilesFolder.Text,
                     DownloadFolder = TxtDownloadFolder.Text,
@@ -232,6 +263,7 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                     {
                         RbSourceLinks.IsChecked = !settings.UseDrawingFolder;
                         RbSourceFolder.IsChecked = settings.UseDrawingFolder;
+                        ChkDownloadOnly.IsChecked = settings.DownloadOnly;
                         TxtLinksFile.Text = settings.LinksFile ?? "";
                         TxtDrawingFilesFolder.Text = settings.DrawingFilesFolder ?? "";
                         TxtDownloadFolder.Text = settings.DownloadFolder ?? "";
@@ -335,7 +367,7 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                 {
                     _cancellationTokenSource?.Dispose();
                     _currentProcessingTask = null;
-                    BtnRun.Content = "  Download & Process";
+                    ResetRunButtonCaption();
                     TxtStatus.Text = "Processing cancelled";
                 }
                 return;
@@ -357,6 +389,7 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
             try
             {
                 bool useDrawingFolder = RbSourceFolder.IsChecked == true;
+                bool downloadOnly = IsDownloadOnly;
                 string linksFile = TxtLinksFile.Text;
                 string drawingFilesFolder = TxtDrawingFilesFolder.Text?.Trim() ?? "";
                 string downloadFolder = TxtDownloadFolder.Text;
@@ -368,7 +401,13 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                 var dllsToLoad = new List<string> { TxtDllPath.Text };
 
                 LogMessage("═══════════════════════════════════════════════════════════════");
-                if (useDrawingFolder)
+                if (downloadOnly)
+                {
+                    LogMessage($"Starting download only (no analysis)");
+                    LogMessage($"Links File:      {linksFile}");
+                    LogMessage($"Download Folder: {downloadFolder}");
+                }
+                else if (useDrawingFolder)
                 {
                     LogMessage($"Starting bulk processing from local drawing folder");
                     LogMessage($"Drawing Folder:  {drawingFilesFolder}");
@@ -379,15 +418,23 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                     LogMessage($"Links File:      {linksFile}");
                     LogMessage($"Download Folder: {downloadFolder}");
                 }
-                LogMessage($"Output Folder:   {outputFolder}");
-                LogMessage($"Command:         {commandName}");
+                if (!downloadOnly)
+                {
+                    LogMessage($"Output Folder:   {outputFolder}");
+                    LogMessage($"Command:         {commandName}");
+                }
                 LogMessage($"Max Parallel:    {maxParallel}");
                 LogMessage("═══════════════════════════════════════════════════════════════\n");
 
                 _cancellationTokenSource = new CancellationTokenSource();
                 var cancellationToken = _cancellationTokenSource.Token;
 
-                if (useDrawingFolder)
+                if (downloadOnly)
+                {
+                    // Just fetch the files from the links - no AutoCAD, no reports
+                    await DownloadOnlyAsync(linksFile, downloadFolder, maxParallel, cancellationToken);
+                }
+                else if (useDrawingFolder)
                 {
                     // Process DWG files already present in the local folder (no download)
                     var processor = new DrawingBatchProcessor(
@@ -428,30 +475,208 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                     TxtExecutionTime.Visibility = Visibility.Visible;
                 }
 
-                TxtStatus.Text = "✅ Processing complete!";
-                LogMessage("\n✅ All processing complete!");
-                WpfMessageBox.Show("Download and processing completed successfully!", "Success", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
+                if (downloadOnly)
+                {
+                    TxtStatus.Text = "✅ Download complete!";
+                    LogMessage("\n✅ All downloads complete!");
+                    WpfMessageBox.Show("Drawing files downloaded successfully!", "Success", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
+                }
+                else
+                {
+                    TxtStatus.Text = "✅ Processing complete!";
+                    LogMessage("\n✅ All processing complete!");
+                    WpfMessageBox.Show("Download and processing completed successfully!", "Success", WpfMessageBoxButton.OK, WpfMessageBoxImage.Information);
+                }
             }
             catch (OperationCanceledException)
             {
                 TxtStatus.Text = "❌ Processing cancelled";
                 LogMessage("\n❌ Processing was cancelled by user.");
-                BtnRun.Content = "  Download & Process";
             }
             catch (Exception ex)
             {
                 TxtStatus.Text = "Error occurred";
                 LogMessage($"\n❌ Error: {ex.Message}");
                 WpfMessageBox.Show($"Error during processing:\n{ex.Message}", "Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
-                BtnRun.Content = "  Download & Process";
             }
             finally
             {
                 _currentProcessingTask = null;
                 _cancellationTokenSource?.Dispose();
                 _cancellationTokenSource = null;
-                BtnRun.Content = "  Download & Process";
+                ResetRunButtonCaption();
             }
+        }
+
+        private void ResetRunButtonCaption()
+        {
+            BtnRun.Content = IsDownloadOnly ? "▶ Download Drawings" : "▶ Analyze Drawings";
+        }
+
+        /// <summary>
+        /// Downloads every DWG from the links file into a timestamped subfolder of the
+        /// download folder. No AutoCAD command is run and downloaded files are always kept.
+        /// </summary>
+        private async Task DownloadOnlyAsync(string linksFile, string downloadFolder, int maxParallel,
+            CancellationToken cancellationToken)
+        {
+            var links = ReadLinks(linksFile);
+
+            Directory.CreateDirectory(downloadFolder);
+
+            string batchStartTime = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string batchDownloadFolder = Path.Combine(downloadFolder, batchStartTime + "_drawing_files");
+            Directory.CreateDirectory(batchDownloadFolder);
+            LogMessage($"📁 Downloads: {batchStartTime}_drawing_files");
+
+            _totalFiles = links.Count;
+            _completedFiles = 0;
+
+            int successCount = 0;
+            int failedCount = 0;
+            var lockObj = new object();
+            var usedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            LogMessage($"\n📥 Downloading {links.Count} file(s) ({maxParallel} concurrent)...");
+
+            await Parallel.ForEachAsync(links, new ParallelOptions
+            {
+                MaxDegreeOfParallelism = maxParallel,
+                CancellationToken = cancellationToken
+            },
+            async (link, ct) =>
+            {
+                string fileName = "";
+                string filePath = "";
+
+                try
+                {
+                    fileName = GetFileNameFromLink(link);
+
+                    // Two links can resolve to the same name - keep both instead of overwriting
+                    lock (lockObj)
+                    {
+                        string candidate = fileName;
+                        int suffix = 1;
+                        while (!usedFileNames.Add(candidate))
+                        {
+                            candidate = $"{Path.GetFileNameWithoutExtension(fileName)}_{suffix}{Path.GetExtension(fileName)}";
+                            suffix++;
+                        }
+                        fileName = candidate;
+                    }
+
+                    filePath = Path.Combine(batchDownloadFolder, fileName);
+
+                    using (var client = new WebClient())
+                    using (ct.Register(client.CancelAsync))
+                    {
+                        await client.DownloadFileTaskAsync(new Uri(link), filePath);
+                    }
+
+                    lock (lockObj)
+                    {
+                        successCount++;
+                        LogMessage($"✅ Downloaded: {fileName}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lock (lockObj)
+                    {
+                        failedCount++;
+                        LogMessage($"❌ Failed ({(string.IsNullOrEmpty(fileName) ? link : fileName)}): {ex.Message}");
+                    }
+
+                    // Don't leave a partial file behind
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+                            File.Delete(filePath);
+                    }
+                    catch { }
+                }
+                finally
+                {
+                    int done;
+                    lock (lockObj)
+                    {
+                        _completedFiles++;
+                        done = _completedFiles;
+                    }
+
+                    int ok = successCount;
+                    int bad = failedCount;
+                    Dispatcher.Invoke(() =>
+                    {
+                        TxtStatus.Text = $"Downloading: {done}/{_totalFiles} | Success: {ok} | Failed: {bad}";
+                    });
+                }
+            });
+
+            LogMessage($"\n✅ Download complete!");
+            LogMessage($"   - Downloaded: {successCount}");
+            LogMessage($"   - Failed: {failedCount}");
+            LogMessage($"   - Folder: {batchDownloadFolder}");
+        }
+
+        /// <summary>
+        /// Reads non-empty, non-comment lines from the links file.
+        /// </summary>
+        private List<string> ReadLinks(string linksFile)
+        {
+            LogMessage("📥 Reading download links from file...");
+            List<string> links;
+            try
+            {
+                links = File.ReadAllLines(linksFile)
+                    .Select(line => line.Trim())
+                    .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith("#"))
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Failed to read links file: {ex.Message}");
+            }
+
+            LogMessage($"✅ Found {links.Count} download link(s)");
+
+            if (links.Count == 0)
+            {
+                throw new Exception("No valid download links found in the file");
+            }
+
+            return links;
+        }
+
+        /// <summary>
+        /// Derives a safe local file name from a download URL, falling back to a generated
+        /// name when the URL carries no usable name.
+        /// </summary>
+        private static string GetFileNameFromLink(string link)
+        {
+            string fileName = "";
+            try
+            {
+                fileName = Path.GetFileName(new Uri(link).LocalPath);
+                fileName = Uri.UnescapeDataString(fileName);
+            }
+            catch
+            {
+                // Fall through to the generated name below
+            }
+
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+            {
+                fileName = fileName.Replace(invalid, '_');
+            }
+
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                fileName = $"drawing_{Guid.NewGuid():N}.dwg";
+            }
+
+            return fileName;
         }
 
         private async Task DownloadAndProcessAsync(string linksFile, string downloadFolder, string outputFolder,
@@ -682,28 +907,32 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                 }
             }
 
-            if (string.IsNullOrWhiteSpace(TxtOutputFolder.Text))
+            // Download-only runs never touch AutoCAD, so skip the analysis-related checks
+            if (!IsDownloadOnly)
             {
-                WpfMessageBox.Show("Please select an output folder", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
-            }
+                if (string.IsNullOrWhiteSpace(TxtOutputFolder.Text))
+                {
+                    WpfMessageBox.Show("Please select an output folder", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    return false;
+                }
 
-            if (string.IsNullOrWhiteSpace(TxtDllPath.Text) || !File.Exists(TxtDllPath.Text))
-            {
-                WpfMessageBox.Show("Please select a valid DLL file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
-            }
+                if (string.IsNullOrWhiteSpace(TxtDllPath.Text) || !File.Exists(TxtDllPath.Text))
+                {
+                    WpfMessageBox.Show("Please select a valid DLL file", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    return false;
+                }
 
-            if (string.IsNullOrWhiteSpace(TxtAutoCADPath.Text) || !File.Exists(TxtAutoCADPath.Text))
-            {
-                WpfMessageBox.Show("Please select AutoCAD accoreconsole.exe", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
-            }
+                if (string.IsNullOrWhiteSpace(TxtAutoCADPath.Text) || !File.Exists(TxtAutoCADPath.Text))
+                {
+                    WpfMessageBox.Show("Please select AutoCAD accoreconsole.exe", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    return false;
+                }
 
-            if (string.IsNullOrWhiteSpace(TxtCommandName.Text))
-            {
-                WpfMessageBox.Show("Please enter a command name", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
-                return false;
+                if (string.IsNullOrWhiteSpace(TxtCommandName.Text))
+                {
+                    WpfMessageBox.Show("Please enter a command name", "Validation Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Warning);
+                    return false;
+                }
             }
 
             if (!int.TryParse(TxtMaxParallel.Text, out int maxParallel) || maxParallel < 1)
@@ -858,6 +1087,7 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
     public class UserSettings
     {
         public bool UseDrawingFolder { get; set; }
+        public bool DownloadOnly { get; set; }
         public string? LinksFile { get; set; }
         public string? DrawingFilesFolder { get; set; }
         public string? DownloadFolder { get; set; }

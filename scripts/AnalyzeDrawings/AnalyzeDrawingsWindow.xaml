@@ -64,6 +64,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120"/>
@@ -92,20 +93,26 @@
                 <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtDownloadFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
                 <Button Grid.Row="2" Grid.Column="2" x:Name="BtnBrowseDownloadFolder" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseDownloadFolder_Click"/>
 
+                <!-- Download Only (links mode only) -->
+                <CheckBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" x:Name="ChkDownloadOnly"
+                          Content="Download only (skip AutoCAD analysis)" Margin="5" VerticalAlignment="Center"
+                          Checked="DownloadOnly_Changed" Unchecked="DownloadOnly_Changed"
+                          ToolTip="Only download the DWG files from the links into the download folder. No AutoCAD command is run and no reports are generated."/>
+
                 <!-- Drawing Files Folder (drawing folder mode only) -->
-                <TextBlock Grid.Row="3" Grid.Column="0" x:Name="LblDrawingFilesFolder" Text="Drawing Folder:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="Local folder with the DWG files to process"/>
-                <TextBox Grid.Row="3" Grid.Column="1" x:Name="TxtDrawingFilesFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
-                <Button Grid.Row="3" Grid.Column="2" x:Name="BtnBrowseDrawingFilesFolder" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseDrawingFilesFolder_Click"/>
+                <TextBlock Grid.Row="4" Grid.Column="0" x:Name="LblDrawingFilesFolder" Text="Drawing Folder:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="Local folder with the DWG files to process"/>
+                <TextBox Grid.Row="4" Grid.Column="1" x:Name="TxtDrawingFilesFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="4" Grid.Column="2" x:Name="BtnBrowseDrawingFilesFolder" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseDrawingFilesFolder_Click"/>
 
                 <!-- Output Folder -->
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="Output Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
-                <TextBox Grid.Row="4" Grid.Column="1" x:Name="TxtOutputFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
-                <Button Grid.Row="4" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseOutputFolder_Click"/>
+                <TextBlock Grid.Row="5" Grid.Column="0" x:Name="LblOutputFolder" Text="Output Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <TextBox Grid.Row="5" Grid.Column="1" x:Name="TxtOutputFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                <Button Grid.Row="5" Grid.Column="2" x:Name="BtnBrowseOutputFolder" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseOutputFolder_Click"/>
             </Grid>
         </GroupBox>
 
         <!-- DLL Path -->
-        <GroupBox Grid.Row="2" Header="📦 DLL Path" Margin="0,0,0,10" Padding="10">
+        <GroupBox Grid.Row="2" x:Name="GrpDllPath" Header="📦 DLL Path" Margin="0,0,0,10" Padding="10">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -123,7 +130,7 @@
         </GroupBox>
 
         <!-- AutoCAD Settings -->
-        <GroupBox Grid.Row="3" Header="🔧 AutoCAD Settings" Margin="0,0,0,10" Padding="10">
+        <GroupBox Grid.Row="3" x:Name="GrpAutoCADSettings" Header="🔧 AutoCAD Settings" Margin="0,0,0,10" Padding="10">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -154,7 +161,7 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Command Name -->
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Command Name:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                <TextBlock Grid.Row="0" Grid.Column="0" x:Name="LblCommandName" Text="Command Name:" VerticalAlignment="Center" Margin="0,5,0,5"/>
                 <TextBox Grid.Row="0" Grid.Column="1" x:Name="TxtCommandName" Margin="5" Padding="5" VerticalAlignment="Center" Text="RunPreScrutinyValidationsBatch"/>
 
                 <!-- Max Parallel Processes -->
