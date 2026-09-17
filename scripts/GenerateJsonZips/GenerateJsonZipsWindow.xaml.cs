@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,6 +9,7 @@ using System.Windows.Controls;
 using BatchProcessor.JsonDiff;
 using BatchProcessor.PreScrutiny;
 using BatchProcessor.Relations;
+using BatchProcessor.Utils;
 using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using WinFormsFolderBrowser = System.Windows.Forms.FolderBrowserDialog;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
@@ -18,6 +20,7 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
     {
         private const string SettingsFile = "Settings/generate_json_zips_settings.json";
         private const string WorkloadMapsFolder = "WorkloadMaps";
+        private const string ReportLinkBaseUrl = "https://citizen-portal-epsilon.flowwlabs.tech/report/";
 
         private bool _isNavigatingBack = false;
         private CancellationTokenSource? _cts;
@@ -179,12 +182,13 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             SetStatus("🔍 Validating mappings...");
             TxtLog.Clear();
 
-            // If no Workload Map CSV was supplied, generate one now: map every
-            // discovered drawing to a fresh GUID and save it under WorkloadMaps/
-            // with a datetime-stamped name, then use it for validation and the run.
+            // If no Workload Map CSV was supplied, generate one now: copy the App Params
+            // CSV, stamp a fresh WorkloadID on every row (adding the column when absent)
+            // and save it under WorkloadMaps/ with a datetime-stamped name, then use it
+            // for validation and the run.
             if (string.IsNullOrWhiteSpace(TxtWorkloadMapCsv.Text))
             {
-                string? generated = GenerateWorkloadMapCsv(TxtDrawingsFolder.Text.Trim());
+                string? generated = GenerateWorkloadMapCsv(TxtAppParamsCsv.Text.Trim());
                 if (generated != null)
                     TxtWorkloadMapCsv.Text = generated;
             }
@@ -225,6 +229,11 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             if (result.IsValid)
             {
                 Log($"✅ All {result.TotalDrawings} drawing(s) are fully mapped. Ready to run.");
+
+                // Emit the filename → report link CSV from whichever workload map is in
+                // effect, so the links always match the IDs the zips will be built with.
+                GenerateReportLinksCsv(TxtWorkloadMapCsv.Text.Trim());
+
                 SetStatus($"✅ Validation passed — {result.TotalDrawings} drawing(s) ready.");
                 _mappingsValidated = true;
                 BtnRun.IsEnabled = true;
@@ -390,36 +399,68 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
         }
 
         /// <summary>
-        /// Generates a Workload Map CSV for every .dwg in the drawings folder,
-        /// assigning each a fresh GUID as its WorkloadID. The file is saved into
-        /// the WorkloadMaps/ project folder with a datetime-stamped name and its
-        /// path is returned. Returns null if no drawings are found or on failure.
+        /// Build a workload map by copying the App Params CSV and stamping a freshly
+        /// generated WorkloadID onto every data row. The WorkloadID column is appended
+        /// if the source CSV doesn't have one; if it does, its values are regenerated.
+        /// The original App Params CSV is never modified — the copy is written to
+        /// WorkloadMaps/ with a datetime-stamped name and used as the Workload Map CSV.
+        /// Returns the new file's path, or null if it could not be generated.
         /// </summary>
-        private string? GenerateWorkloadMapCsv(string drawingsFolder)
+        private string? GenerateWorkloadMapCsv(string appParamsCsvPath)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(drawingsFolder) || !Directory.Exists(drawingsFolder))
+                if (string.IsNullOrWhiteSpace(appParamsCsvPath) || !File.Exists(appParamsCsvPath))
                     return null;
 
-                var drawings = Directory.GetFiles(drawingsFolder, "*.dwg", SearchOption.TopDirectoryOnly);
-                if (drawings.Length == 0)
+                var rows = CsvParser.ParseCsvRows(File.ReadAllText(appParamsCsvPath));
+                if (rows.Count < 2)
                 {
-                    Log("⚠️  No .dwg files found — skipping workload map generation.");
+                    Log("⚠️  App Params CSV has no data rows — skipping workload map generation.");
                     return null;
                 }
 
+                var headers = rows[0];
+                int workloadColumnIndex = FindWorkloadColumnIndex(headers);
+
+                if (workloadColumnIndex == -1)
+                {
+                    workloadColumnIndex = headers.Count;
+                    headers.Add("WorkloadID");
+                    Log($"🆕 Added 'WorkloadID' column (index {workloadColumnIndex}).");
+                }
+                else
+                {
+                    Log($"♻️  Regenerating existing '{headers[workloadColumnIndex]}' column (index {workloadColumnIndex}).");
+                }
+
+                int stamped = 0;
+                for (int i = 1; i < rows.Count; i++)
+                {
+                    var values = rows[i];
+
+                    // Skip fully blank rows so we don't mint IDs for CSV padding.
+                    if (values.All(string.IsNullOrWhiteSpace))
+                        continue;
+
+                    // Short rows (trailing commas omitted) are padded out to the column.
+                    while (values.Count <= workloadColumnIndex)
+                        values.Add(string.Empty);
+
+                    values[workloadColumnIndex] = Guid.NewGuid().ToString();
+                    stamped++;
+                }
+
                 Directory.CreateDirectory(WorkloadMapsFolder);
-                string fileName = $"workload_map_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+                string fileName = $"app_params_with_workload_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
                 string destPath = Path.Combine(WorkloadMapsFolder, fileName);
 
                 var sb = new System.Text.StringBuilder();
-                sb.AppendLine("Marking File Link,WorkloadID");
-                foreach (var dwg in drawings)
-                    sb.AppendLine($"{Path.GetFileName(dwg)},{Guid.NewGuid()}");
+                foreach (var row in rows)
+                    sb.AppendLine(string.Join(",", row.Select(EscapeCsvValue)));
 
                 File.WriteAllText(destPath, sb.ToString());
-                Log($"🆔 Generated workload map for {drawings.Length} drawing(s): {destPath}");
+                Log($"🆔 Generated WorkloadIDs for {stamped} row(s): {destPath}");
                 return destPath;
             }
             catch (Exception ex)
@@ -427,6 +468,110 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 Log($"⚠️  Could not generate workload map: {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Write a two-column CSV mapping each drawing filename to its citizen-portal
+        /// report link, built from the WorkloadIDs in the effective Workload Map CSV
+        /// (whether auto-generated or user-supplied). Saved to WorkloadMaps/ with a
+        /// datetime-stamped name. Returns the new file's path, or null on failure.
+        /// </summary>
+        private string? GenerateReportLinksCsv(string workloadMapCsvPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(workloadMapCsvPath) || !File.Exists(workloadMapCsvPath))
+                    return null;
+
+                var rows = CsvParser.ParseCsvRows(File.ReadAllText(workloadMapCsvPath));
+                if (rows.Count < 2)
+                {
+                    Log("⚠️  Workload map has no data rows — skipping report links CSV.");
+                    return null;
+                }
+
+                var headers = rows[0];
+                int filenameColumnIndex = CsvParser.FindFilenameColumnIndex(headers);
+                int workloadColumnIndex = FindWorkloadColumnIndex(headers);
+
+                if (workloadColumnIndex == -1)
+                {
+                    Log("⚠️  No 'WorkloadID' column found — skipping report links CSV.");
+                    return null;
+                }
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("File Name,Report Link");
+
+                int linked = 0;
+                for (int i = 1; i < rows.Count; i++)
+                {
+                    var values = rows[i];
+
+                    // Need both a filename and an ID to form a usable link.
+                    if (filenameColumnIndex >= values.Count
+                        || workloadColumnIndex >= values.Count
+                        || string.IsNullOrWhiteSpace(values[filenameColumnIndex])
+                        || string.IsNullOrWhiteSpace(values[workloadColumnIndex]))
+                        continue;
+
+                    string fileName = Path.GetFileName(values[filenameColumnIndex].Trim());
+                    if (!fileName.Contains('.'))
+                        fileName += ".dwg";
+
+                    string reportLink = ReportLinkBaseUrl + values[workloadColumnIndex].Trim();
+
+                    sb.AppendLine($"{EscapeCsvValue(fileName)},{EscapeCsvValue(reportLink)}");
+                    linked++;
+                }
+
+                if (linked == 0)
+                {
+                    Log("⚠️  No rows had both a filename and a WorkloadID — skipping report links CSV.");
+                    return null;
+                }
+
+                Directory.CreateDirectory(WorkloadMapsFolder);
+                string destPath = Path.Combine(
+                    WorkloadMapsFolder, $"report_links_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+
+                File.WriteAllText(destPath, sb.ToString());
+                Log($"🔗 Generated report links for {linked} drawing(s): {destPath}");
+                return destPath;
+            }
+            catch (Exception ex)
+            {
+                Log($"⚠️  Could not generate report links CSV: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Locate an existing WorkloadID column, accepting the same header spellings
+        /// as WorkloadMapCsvReader. Returns -1 when the CSV has no such column.
+        /// </summary>
+        private static int FindWorkloadColumnIndex(System.Collections.Generic.List<string> headers)
+        {
+            return headers.FindIndex(h =>
+                h.Equals("WorkloadID", StringComparison.OrdinalIgnoreCase) ||
+                h.Equals("Workload ID", StringComparison.OrdinalIgnoreCase) ||
+                h.Equals("WorkLoad_Id", StringComparison.OrdinalIgnoreCase) ||
+                h.Equals("work_load_id", StringComparison.OrdinalIgnoreCase) ||
+                h.Equals("Work load ID", StringComparison.OrdinalIgnoreCase) ||
+                h.Equals("Work Load ID", StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Re-quote a parsed cell so the written CSV round-trips through CsvParser.
+        /// </summary>
+        private static string EscapeCsvValue(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return string.Empty;
+
+            return value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r')
+                ? $"\"{value.Replace("\"", "\"\"")}\""
+                : value;
         }
 
         private void BtnBrowseAutoCAD_Click(object sender, RoutedEventArgs e)
