@@ -434,6 +434,20 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                     Log($"♻️  Regenerating existing '{headers[workloadColumnIndex]}' column (index {workloadColumnIndex}).");
                 }
 
+                // When the CSV has no filename column, readers fall back to column 0 —
+                // which may be the WorkloadID itself (drawings named <WorkloadID>.dwg).
+                // Overwriting it would break the drawing ↔ row link, so preserve the
+                // original value in a "Marking File Link" column before regenerating.
+                int preserveFromIndex = -1;
+                int filenameColumnIndex = CsvParser.FindFilenameColumnIndex(headers);
+                if (filenameColumnIndex == workloadColumnIndex)
+                {
+                    preserveFromIndex = workloadColumnIndex;
+                    headers.Add("Marking File Link");
+                    Log("🔗 No filename column found — preserving original WorkloadIDs as 'Marking File Link'.");
+                }
+                int linkColumnIndex = headers.Count - 1;
+
                 int stamped = 0;
                 for (int i = 1; i < rows.Count; i++)
                 {
@@ -446,6 +460,14 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                     // Short rows (trailing commas omitted) are padded out to the column.
                     while (values.Count <= workloadColumnIndex)
                         values.Add(string.Empty);
+
+                    if (preserveFromIndex >= 0)
+                    {
+                        string original = values[preserveFromIndex].Trim();
+                        while (values.Count <= linkColumnIndex)
+                            values.Add(string.Empty);
+                        values[linkColumnIndex] = string.IsNullOrEmpty(original) ? string.Empty : original + ".dwg";
+                    }
 
                     values[workloadColumnIndex] = Guid.NewGuid().ToString();
                     stamped++;

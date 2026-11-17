@@ -36,6 +36,18 @@ namespace BatchProcessor.Scripts.PreScrutiny
         private System.Windows.Threading.DispatcherTimer? _timerUpdateTimer;
         private Dictionary<string, TextBlock> _timerTextBlocks = new Dictionary<string, TextBlock>();
 
+        // Per-file execution time records (in completion order)
+        private readonly List<FileExecutionRecord> _fileExecutionRecords = new List<FileExecutionRecord>();
+
+        private class FileExecutionRecord
+        {
+            public string FileName { get; set; } = "";
+            public DateTime StartTime { get; set; }
+            public DateTime EndTime { get; set; }
+            public TimeSpan Duration => EndTime - StartTime;
+            public string Status { get; set; } = "";
+        }
+
         public PreScrutinyWindow()
         {
             InitializeComponent();
@@ -237,17 +249,25 @@ namespace BatchProcessor.Scripts.PreScrutiny
             UpdateActiveFileTimers();
         }
 
-        private void StopFileTimer(string fileName)
+        private void StopFileTimer(string fileName, string status)
         {
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.Invoke(() => StopFileTimer(fileName));
+                Dispatcher.Invoke(() => StopFileTimer(fileName, status));
                 return;
             }
 
-            if (_fileStartTimes.ContainsKey(fileName))
+            if (_fileStartTimes.TryGetValue(fileName, out DateTime startTime))
             {
                 _fileStartTimes.Remove(fileName);
+                _fileExecutionRecords.Add(new FileExecutionRecord
+                {
+                    FileName = fileName,
+                    StartTime = startTime,
+                    EndTime = DateTime.Now,
+                    Status = status
+                });
+                UpdateExecutionTimesDisplay();
             }
 
             _timerTextBlocks.Remove(fileName); // Clean up reference
@@ -273,6 +293,141 @@ namespace BatchProcessor.Scripts.PreScrutiny
             _timerTextBlocks.Clear(); // Clean up references
             _timerUpdateTimer?.Stop();
             UpdateActiveFileTimers();
+        }
+
+        private void ClearExecutionTimes()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => ClearExecutionTimes());
+                return;
+            }
+
+            _fileExecutionRecords.Clear();
+            TxtExecutionTimes.Text = "";
+            TxtExecutionTimesSummary.Text = "";
+            GrpExecutionTimes.Visibility = Visibility.Collapsed;
+        }
+
+        private void UpdateExecutionTimesDisplay()
+        {
+            if (_fileExecutionRecords.Count == 0)
+            {
+                GrpExecutionTimes.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            GrpExecutionTimes.Visibility = Visibility.Visible;
+
+            int nameWidth = Math.Max(10, _fileExecutionRecords.Max(r => r.FileName.Length));
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"{"#",-4} {"File".PadRight(nameWidth)}  {"Status",-9} {"Seconds",10}  {"Duration",-10} {"Start",-8} {"End",-8}");
+            int index = 1;
+            foreach (var r in _fileExecutionRecords)
+            {
+                sb.AppendLine($"{index++,-4} {r.FileName.PadRight(nameWidth)}  {r.Status,-9} {r.Duration.TotalSeconds,10:F1}  {FormatDuration(r.Duration),-10} {r.StartTime:HH:mm:ss} {r.EndTime:HH:mm:ss}");
+            }
+            TxtExecutionTimes.Text = sb.ToString().TrimEnd();
+
+            var durations = _fileExecutionRecords.Select(r => r.Duration.TotalSeconds).ToList();
+            TxtExecutionTimesSummary.Text =
+                $"Files: {durations.Count}   Avg: {durations.Average():F1}s   Min: {durations.Min():F1}s   Max: {durations.Max():F1}s   Sum: {durations.Sum():F1}s";
+        }
+
+        private static string CsvField(string value)
+        {
+            return value.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0
+                ? "\"" + value.Replace("\"", "\"\"") + "\""
+                : value;
+        }
+
+        /// <summary>
+        /// Writes the per-file execution times of the finished run to a CSV in the output folder.
+        /// </summary>
+        private async Task WriteExecutionTimesFileAsync(string outputFolder)
+        {
+            // Log lines (and the timings derived from them) are dispatched at Background priority -
+            // let the queued ones run so the last files are included
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+
+            if (_fileExecutionRecords.Count == 0 || string.IsNullOrWhiteSpace(outputFolder))
+            {
+                return;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(outputFolder);
+                string filePath = Path.Combine(outputFolder, $"execution_times_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("#,File,Status,Seconds,Duration,Start,End");
+                int index = 1;
+                foreach (var r in _fileExecutionRecords)
+                {
+                    sb.AppendLine(string.Join(",",
+                        index++,
+                        CsvField(r.FileName),
+                        CsvField(r.Status),
+                        r.Duration.TotalSeconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture),
+                        FormatDuration(r.Duration),
+                        r.StartTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                        r.EndTime.ToString("yyyy-MM-dd HH:mm:ss")));
+                }
+                sb.AppendLine();
+                sb.AppendLine(CsvField(TxtExecutionTimesSummary.Text));
+                if (_processingStartTime.HasValue)
+                {
+                    sb.AppendLine(CsvField($"Total Execution Time: {FormatDuration(DateTime.Now - _processingStartTime.Value)}"));
+                }
+
+                await File.WriteAllTextAsync(filePath, sb.ToString());
+                LogMessage($"⏱️ Execution times saved: {filePath}");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"⚠️ Could not save execution times file: {ex.Message}");
+            }
+        }
+
+        private void BtnCopyExecutionTimes_Click(object sender, RoutedEventArgs e)
+        {
+            if (_fileExecutionRecords.Count == 0)
+            {
+                return;
+            }
+
+            // Tab-separated so it pastes cleanly into Excel / Sheets
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("#\tFile\tStatus\tSeconds\tDuration\tStart\tEnd");
+            int index = 1;
+            foreach (var r in _fileExecutionRecords)
+            {
+                sb.AppendLine($"{index++}\t{r.FileName}\t{r.Status}\t{r.Duration.TotalSeconds:F1}\t{FormatDuration(r.Duration)}\t{r.StartTime:yyyy-MM-dd HH:mm:ss}\t{r.EndTime:yyyy-MM-dd HH:mm:ss}");
+            }
+            sb.AppendLine();
+            sb.AppendLine(TxtExecutionTimesSummary.Text);
+            if (!string.IsNullOrEmpty(TxtExecutionTime.Text))
+            {
+                sb.AppendLine(TxtExecutionTime.Text);
+            }
+
+            try
+            {
+                System.Windows.Clipboard.SetText(sb.ToString());
+                BtnCopyExecutionTimes.Content = "✓ Copied";
+                var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                timer.Tick += (s, args) =>
+                {
+                    BtnCopyExecutionTimes.Content = "📋 Copy All";
+                    timer.Stop();
+                };
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                WpfMessageBox.Show($"Failed to copy to clipboard: {ex.Message}", "Copy Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
+            }
         }
 
         private void LoadCommandsFromAppSettings()
@@ -733,6 +888,7 @@ namespace BatchProcessor.Scripts.PreScrutiny
 
                 // Clear timers when starting new batch
                 ClearAllFileTimers();
+                ClearExecutionTimes();
 
                 try
                 {
@@ -745,6 +901,8 @@ namespace BatchProcessor.Scripts.PreScrutiny
                         progress);
 
                     var summary = await _currentProcessingTask;
+
+                    await WriteExecutionTimesFileAsync(outputFolder);
 
                     // Check if CommonUtils.dll failed to load and show alert
                     if (summary.UIPluginLoadFailed && !string.IsNullOrWhiteSpace(TxtCommonUtilsDll.Text))
@@ -812,6 +970,9 @@ namespace BatchProcessor.Scripts.PreScrutiny
                     TxtStatus.Text = "❌ Processing cancelled";
                     LogMessage("\n❌ Processing was cancelled by user.");
                     BtnRun.Content = "▶ Run Pre Scrutiny Validations";
+
+                    // Keep the timings of the files that finished before cancelling
+                    await WriteExecutionTimesFileAsync(outputFolder);
 
                     // Show execution time even if cancelled
                     if (_processingStartTime.HasValue)
@@ -1237,12 +1398,14 @@ namespace BatchProcessor.Scripts.PreScrutiny
                 {
                     // Extract filename from completion message
                     string fileName = "";
+                    string status = "";
                     if (message.Contains("Completed processing:"))
                     {
-                        var match = System.Text.RegularExpressions.Regex.Match(message, @"Completed processing:\s*([^(]+)");
+                        var match = System.Text.RegularExpressions.Regex.Match(message, @"Completed processing:\s*([^(]+)(?:\(Success:\s*(\w+)\))?");
                         if (match.Success)
                         {
                             fileName = match.Groups[1].Value.Trim();
+                            status = match.Groups[2].Value.Equals("True", StringComparison.OrdinalIgnoreCase) ? "Success" : "Failed";
                         }
                     }
                     else if (message.Contains("UNHANDLED EXCEPTION processing"))
@@ -1251,12 +1414,13 @@ namespace BatchProcessor.Scripts.PreScrutiny
                         if (match.Success)
                         {
                             fileName = match.Groups[1].Value.Trim();
+                            status = "Exception";
                         }
                     }
 
                     if (!string.IsNullOrEmpty(fileName))
                     {
-                        StopFileTimer(fileName);
+                        StopFileTimer(fileName, status);
                     }
                 }
             }

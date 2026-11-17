@@ -18,6 +18,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*" MinHeight="200"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -205,8 +206,32 @@
             </Grid>
         </GroupBox>
 
+        <!-- Per-File Execution Times -->
+        <GroupBox Grid.Row="7" Header="⏱️ File Execution Times" Margin="0,0,0,10" Padding="10" Visibility="Collapsed" x:Name="GrpExecutionTimes">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" x:Name="TxtExecutionTimesSummary" FontWeight="SemiBold" FontSize="12"
+                               VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <Button Grid.Column="1" x:Name="BtnCopyExecutionTimes" Content="📋 Copy All" Padding="10,3"
+                            Click="BtnCopyExecutionTimes_Click"
+                            ToolTip="Copy all file execution times to clipboard (tab-separated, pastes into Excel)"/>
+                </Grid>
+                <TextBox Grid.Row="1" x:Name="TxtExecutionTimes" IsReadOnly="True" TextWrapping="NoWrap"
+                         FontFamily="Consolas" FontSize="11" Background="#F8F9FA" BorderThickness="0"
+                         MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+            </Grid>
+        </GroupBox>
+
         <!-- Log Output -->
-        <GroupBox Grid.Row="7" Header="📝 Log Output" Margin="0,0,0,10" Padding="5">
+        <GroupBox Grid.Row="8" Header="📝 Log Output" Margin="0,0,0,10" Padding="5">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <TextBox x:Name="TxtLog" IsReadOnly="True" TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto" Background="#F8F9FA"
@@ -215,7 +240,7 @@
         </GroupBox>
 
         <!-- Footer -->
-        <Border Grid.Row="8" Background="#ECF0F1" Padding="10" CornerRadius="5">
+        <Border Grid.Row="9" Background="#ECF0F1" Padding="10" CornerRadius="5">
             <TextBlock Text="💡 Tip: Create a text file with download URLs (one per line) before starting"
                        TextWrapping="Wrap" Foreground="#7F8C8D" FontSize="11" HorizontalAlignment="Center"/>
         </Border>

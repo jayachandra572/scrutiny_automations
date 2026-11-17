@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -30,6 +31,22 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
         private int _totalFiles = 0;
         private int _completedFiles = 0;
         private DateTime? _processingStartTime = null;
+
+        // Per-file execution timing (only touched on the UI thread)
+        private readonly Dictionary<string, DateTime> _fileStartTimes = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, DateTime> _fileDownloadEndTimes = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<FileExecutionRecord> _fileExecutionRecords = new List<FileExecutionRecord>();
+
+        private class FileExecutionRecord
+        {
+            public string FileName { get; set; } = "";
+            public DateTime StartTime { get; set; }
+            public DateTime? DownloadEndTime { get; set; }
+            public DateTime EndTime { get; set; }
+            public TimeSpan Duration => EndTime - StartTime;
+            public TimeSpan? DownloadDuration => DownloadEndTime.HasValue ? DownloadEndTime.Value - StartTime : null;
+            public string Status { get; set; } = "";
+        }
 
         public AnalyzeDrawingsWindow()
         {
@@ -382,9 +399,15 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
             BtnRun.Content = "⏹ Stop Processing";
             TxtStatus.Text = "Processing...";
             TxtLog.Clear();
+            TxtExecutionTime.Visibility = Visibility.Collapsed;
+            TxtExecutionTime.Text = "";
+            ClearExecutionTimes();
             _completedFiles = 0;
             _totalFiles = 0;
             _processingStartTime = DateTime.Now;
+
+            // Download-only runs have no output folder - their timings go next to the downloads
+            string executionTimesFolder = IsDownloadOnly ? TxtDownloadFolder.Text : TxtOutputFolder.Text;
 
             try
             {
@@ -467,6 +490,8 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                     await DownloadAndProcessAsync(linksFile, downloadFolder, outputFolder, commandName, dllsToLoad, maxParallel, verbose, cancellationToken);
                 }
 
+                await WriteExecutionTimesFileAsync(executionTimesFolder);
+
                 if (_processingStartTime.HasValue)
                 {
                     var totalDuration = DateTime.Now - _processingStartTime.Value;
@@ -492,6 +517,9 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
             {
                 TxtStatus.Text = "❌ Processing cancelled";
                 LogMessage("\n❌ Processing was cancelled by user.");
+
+                // Keep the timings of the files that finished before cancelling
+                await WriteExecutionTimesFileAsync(executionTimesFolder);
             }
             catch (Exception ex)
             {
@@ -548,6 +576,7 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
             {
                 string fileName = "";
                 string filePath = "";
+                DateTime fileStart = DateTime.Now;
 
                 try
                 {
@@ -579,6 +608,7 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                         successCount++;
                         LogMessage($"✅ Downloaded: {fileName}");
                     }
+                    RecordFileExecution(fileName, fileStart, null, DateTime.Now, "Downloaded");
                 }
                 catch (Exception ex)
                 {
@@ -587,6 +617,7 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                         failedCount++;
                         LogMessage($"❌ Failed ({(string.IsNullOrEmpty(fileName) ? link : fileName)}): {ex.Message}");
                     }
+                    RecordFileExecution(string.IsNullOrEmpty(fileName) ? link : fileName, fileStart, null, DateTime.Now, "Failed");
 
                     // Don't leave a partial file behind
                     try
@@ -726,14 +757,23 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
                 enableVerboseLogging: verbose
             );
 
-            await processor.ProcessFromLinksAsync(
-                links: links,
-                downloadFolder: downloadFolder,
-                outputFolder: outputFolder,
-                inputJsonPath: string.Empty,
-                maxParallel: maxParallel,
-                cancellationToken: cancellationToken);
-            Console.WriteLine("DONE");
+            // Route processor output to the log so it is visible and per-file timings can be tracked
+            var linksOriginalOut = Console.Out;
+            Console.SetOut(new TextBoxWriter(this));
+            try
+            {
+                await processor.ProcessFromLinksAsync(
+                    links: links,
+                    downloadFolder: downloadFolder,
+                    outputFolder: outputFolder,
+                    inputJsonPath: string.Empty,
+                    maxParallel: maxParallel,
+                    cancellationToken: cancellationToken);
+            }
+            finally
+            {
+                Console.SetOut(linksOriginalOut);
+            }
             return;
 
             var originalOut = Console.Out;
@@ -966,11 +1006,17 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
 
         public void LogMessage(string message)
         {
+            // Capture the time now - the UI thread may only get to the message later
+            LogMessage(message, DateTime.Now);
+        }
+
+        private void LogMessage(string message, DateTime loggedAt)
+        {
             if (TxtLog == null) return;
 
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.BeginInvoke(new Action(() => LogMessage(message)), System.Windows.Threading.DispatcherPriority.Background);
+                Dispatcher.BeginInvoke(new Action(() => LogMessage(message, loggedAt)), System.Windows.Threading.DispatcherPriority.Background);
                 return;
             }
 
@@ -978,12 +1024,250 @@ namespace BatchProcessor.Scripts.AnalyzeDrawings
             {
                 TxtLog.AppendText(message + Environment.NewLine);
                 TxtLog.ScrollToEnd();
+                TrackFileTiming(message, loggedAt);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"LogMessage error: {ex.Message}");
             }
         }
+
+        #endregion
+
+        #region File Execution Times
+
+        /// <summary>
+        /// Derives per-file start/end times from the batch processor's log lines.
+        /// Folder mode: "Starting processing" → "Completed processing" / "UNHANDLED EXCEPTION".
+        /// Links mode:  "Downloading" → "Downloaded" → "JSON created" / "Deleted (no JSON)" / "Timeout" / "Error".
+        /// </summary>
+        private void TrackFileTiming(string message, DateTime at)
+        {
+            Match m;
+
+            if ((m = Regex.Match(message, @"🔄 Starting processing:\s*([^(]+)")).Success ||
+                (m = Regex.Match(message, @"📥 Downloading:\s*(.+)$")).Success)
+            {
+                string name = m.Groups[1].Value.Trim();
+                _fileStartTimes[name] = at;
+                _fileDownloadEndTimes.Remove(name);
+            }
+            else if ((m = Regex.Match(message, @"✅ Downloaded:\s*(.+)$")).Success)
+            {
+                string name = m.Groups[1].Value.Trim();
+                if (_fileStartTimes.ContainsKey(name))
+                {
+                    _fileDownloadEndTimes[name] = at;
+                }
+            }
+            else if ((m = Regex.Match(message, @"✅ Completed processing:\s*([^(]+)(?:\(Success:\s*(\w+)\))?")).Success)
+            {
+                string status = m.Groups[2].Value.Equals("True", StringComparison.OrdinalIgnoreCase) ? "Success" : "Failed";
+                FinishFileTiming(m.Groups[1].Value.Trim(), at, status);
+            }
+            else if ((m = Regex.Match(message, @"UNHANDLED EXCEPTION processing\s+([^:]+)")).Success)
+            {
+                FinishFileTiming(m.Groups[1].Value.Trim(), at, "Exception");
+            }
+            else if ((m = Regex.Match(message, @"JSON created → KEEP:\s*(.+)$")).Success)
+            {
+                FinishFileTiming(m.Groups[1].Value.Trim(), at, "Success");
+            }
+            else if ((m = Regex.Match(message, @"Deleted \(no JSON\):\s*(.+)$")).Success)
+            {
+                FinishFileTiming(m.Groups[1].Value.Trim(), at, "No JSON");
+            }
+            else if ((m = Regex.Match(message, @"Timeout → Skipping:\s*(.+)$")).Success)
+            {
+                FinishFileTiming(m.Groups[1].Value.Trim(), at, "Timeout");
+            }
+            else if ((m = Regex.Match(message, @"^❌ Error \((.+?)\):")).Success)
+            {
+                FinishFileTiming(m.Groups[1].Value.Trim(), at, "Error");
+            }
+        }
+
+        private void FinishFileTiming(string name, DateTime at, string status)
+        {
+            if (!_fileStartTimes.TryGetValue(name, out DateTime start))
+            {
+                return;
+            }
+
+            _fileStartTimes.Remove(name);
+            DateTime? downloadEnd = _fileDownloadEndTimes.TryGetValue(name, out DateTime d) ? d : null;
+            _fileDownloadEndTimes.Remove(name);
+
+            RecordFileExecution(name, start, downloadEnd, at, status);
+        }
+
+        private void RecordFileExecution(string name, DateTime start, DateTime? downloadEnd, DateTime end, string status)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => RecordFileExecution(name, start, downloadEnd, end, status)));
+                return;
+            }
+
+            _fileExecutionRecords.Add(new FileExecutionRecord
+            {
+                FileName = name,
+                StartTime = start,
+                DownloadEndTime = downloadEnd,
+                EndTime = end,
+                Status = status
+            });
+            UpdateExecutionTimesDisplay();
+        }
+
+        private void ClearExecutionTimes()
+        {
+            _fileStartTimes.Clear();
+            _fileDownloadEndTimes.Clear();
+            _fileExecutionRecords.Clear();
+            TxtExecutionTimes.Text = "";
+            TxtExecutionTimesSummary.Text = "";
+            GrpExecutionTimes.Visibility = Visibility.Collapsed;
+        }
+
+        private static string FormatSeconds(TimeSpan? duration)
+        {
+            return duration.HasValue ? duration.Value.TotalSeconds.ToString("F1") : "-";
+        }
+
+        private void UpdateExecutionTimesDisplay()
+        {
+            if (_fileExecutionRecords.Count == 0)
+            {
+                GrpExecutionTimes.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            GrpExecutionTimes.Visibility = Visibility.Visible;
+
+            bool hasDownloads = _fileExecutionRecords.Any(r => r.DownloadEndTime.HasValue);
+            int nameWidth = Math.Max(10, _fileExecutionRecords.Max(r => r.FileName.Length));
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"{"#",-4} {"File".PadRight(nameWidth)}  {"Status",-10}");
+            if (hasDownloads) sb.Append($" {"Download s",10}");
+            sb.AppendLine($" {"Total s",10}  {"Duration",-10} {"Start",-8} {"End",-8}");
+
+            int index = 1;
+            foreach (var r in _fileExecutionRecords)
+            {
+                sb.Append($"{index++,-4} {r.FileName.PadRight(nameWidth)}  {r.Status,-10}");
+                if (hasDownloads) sb.Append($" {FormatSeconds(r.DownloadDuration),10}");
+                sb.AppendLine($" {r.Duration.TotalSeconds,10:F1}  {FormatDuration(r.Duration),-10} {r.StartTime:HH:mm:ss} {r.EndTime:HH:mm:ss}");
+            }
+            TxtExecutionTimes.Text = sb.ToString().TrimEnd();
+
+            var durations = _fileExecutionRecords.Select(r => r.Duration.TotalSeconds).ToList();
+            TxtExecutionTimesSummary.Text =
+                $"Files: {durations.Count}   Avg: {durations.Average():F1}s   Min: {durations.Min():F1}s   Max: {durations.Max():F1}s   Sum: {durations.Sum():F1}s";
+        }
+
+        private static string CsvField(string value)
+        {
+            return value.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0
+                ? "\"" + value.Replace("\"", "\"\"") + "\""
+                : value;
+        }
+
+        /// <summary>
+        /// Writes the per-file execution times of the finished run to a CSV in the given folder.
+        /// </summary>
+        private async Task WriteExecutionTimesFileAsync(string folder)
+        {
+            // Log lines (and the timings derived from them) are dispatched at Background priority -
+            // let the queued ones run so the last files are included
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+
+            if (_fileExecutionRecords.Count == 0 || string.IsNullOrWhiteSpace(folder))
+            {
+                return;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(folder);
+                string filePath = Path.Combine(folder, $"execution_times_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("#,File,Status,Download Seconds,Total Seconds,Duration,Start,End");
+                int index = 1;
+                foreach (var r in _fileExecutionRecords)
+                {
+                    sb.AppendLine(string.Join(",",
+                        index++,
+                        CsvField(r.FileName),
+                        CsvField(r.Status),
+                        r.DownloadDuration.HasValue
+                            ? r.DownloadDuration.Value.TotalSeconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
+                            : "",
+                        r.Duration.TotalSeconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture),
+                        FormatDuration(r.Duration),
+                        r.StartTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                        r.EndTime.ToString("yyyy-MM-dd HH:mm:ss")));
+                }
+                sb.AppendLine();
+                sb.AppendLine(CsvField(TxtExecutionTimesSummary.Text));
+                if (_processingStartTime.HasValue)
+                {
+                    sb.AppendLine(CsvField($"Total Execution Time: {FormatDuration(DateTime.Now - _processingStartTime.Value)}"));
+                }
+
+                await File.WriteAllTextAsync(filePath, sb.ToString());
+                LogMessage($"⏱️ Execution times saved: {filePath}");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"⚠️ Could not save execution times file: {ex.Message}");
+            }
+        }
+
+        private void BtnCopyExecutionTimes_Click(object sender, RoutedEventArgs e)
+        {
+            if (_fileExecutionRecords.Count == 0)
+            {
+                return;
+            }
+
+            // Tab-separated so it pastes cleanly into Excel / Sheets
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("#\tFile\tStatus\tDownload Seconds\tTotal Seconds\tDuration\tStart\tEnd");
+            int index = 1;
+            foreach (var r in _fileExecutionRecords)
+            {
+                sb.AppendLine($"{index++}\t{r.FileName}\t{r.Status}\t{FormatSeconds(r.DownloadDuration)}\t{r.Duration.TotalSeconds:F1}\t{FormatDuration(r.Duration)}\t{r.StartTime:yyyy-MM-dd HH:mm:ss}\t{r.EndTime:yyyy-MM-dd HH:mm:ss}");
+            }
+            sb.AppendLine();
+            sb.AppendLine(TxtExecutionTimesSummary.Text);
+            if (!string.IsNullOrEmpty(TxtExecutionTime.Text))
+            {
+                sb.AppendLine(TxtExecutionTime.Text);
+            }
+
+            try
+            {
+                System.Windows.Clipboard.SetText(sb.ToString());
+                BtnCopyExecutionTimes.Content = "✓ Copied";
+                var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                timer.Tick += (s, args) =>
+                {
+                    BtnCopyExecutionTimes.Content = "📋 Copy All";
+                    timer.Stop();
+                };
+                timer.Start();
+            }
+            catch (Exception ex)
+            {
+                WpfMessageBox.Show($"Failed to copy to clipboard: {ex.Message}", "Copy Error", WpfMessageBoxButton.OK, WpfMessageBoxImage.Error);
+            }
+        }
+
+        #endregion
+
+        #region Console Redirect
 
         private class TextBoxWriter : System.IO.TextWriter
         {
