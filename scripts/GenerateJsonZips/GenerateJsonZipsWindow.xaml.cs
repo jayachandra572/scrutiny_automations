@@ -30,6 +30,7 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
         {
             InitializeComponent();
             LoadSettings();
+            UpdateSourceFieldStates();
 
             this.Closing += (s, args) =>
             {
@@ -53,6 +54,10 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 var s = JsonSerializer.Deserialize<GenerateJsonZipsSettings>(json);
                 if (s == null) return;
 
+                RbSourceLinks.IsChecked = s.UseLinks;
+                RbSourceFolder.IsChecked = !s.UseLinks;
+                if (!string.IsNullOrWhiteSpace(s.LinksFile)) TxtLinksFile.Text = s.LinksFile;
+                if (!string.IsNullOrWhiteSpace(s.DownloadFolder)) TxtDownloadFolder.Text = s.DownloadFolder;
                 if (!string.IsNullOrWhiteSpace(s.DrawingsFolder)) TxtDrawingsFolder.Text = s.DrawingsFolder;
                 if (!string.IsNullOrWhiteSpace(s.OutputFolder)) TxtOutputFolder.Text = s.OutputFolder;
                 if (!string.IsNullOrWhiteSpace(s.AppParamsCsvFile)) TxtAppParamsCsv.Text = s.AppParamsCsvFile;
@@ -122,6 +127,9 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             int.TryParse(TxtMaxParallel.Text, out int maxParallel);
             return new GenerateJsonZipsSettings
             {
+                UseLinks = RbSourceLinks.IsChecked == true,
+                LinksFile = TxtLinksFile.Text.Trim(),
+                DownloadFolder = TxtDownloadFolder.Text.Trim(),
                 DrawingsFolder = TxtDrawingsFolder.Text.Trim(),
                 OutputFolder = TxtOutputFolder.Text.Trim(),
                 AppParamsCsvFile = TxtAppParamsCsv.Text.Trim(),
@@ -136,12 +144,24 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
 
         // ── Validation ────────────────────────────────────────────────────────
 
+        private bool UseLinks => RbSourceLinks?.IsChecked == true;
+
         private bool ValidateInputs(out string error)
         {
-            if (string.IsNullOrWhiteSpace(TxtDrawingsFolder.Text))
-                { error = "Drawings Folder is required."; return false; }
-            if (!Directory.Exists(TxtDrawingsFolder.Text.Trim()))
-                { error = "Drawings Folder does not exist."; return false; }
+            if (UseLinks)
+            {
+                if (string.IsNullOrWhiteSpace(TxtLinksFile.Text) || !File.Exists(TxtLinksFile.Text.Trim()))
+                    { error = "Links File is required and must exist."; return false; }
+                if (string.IsNullOrWhiteSpace(TxtDownloadFolder.Text))
+                    { error = "Download Folder is required."; return false; }
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(TxtDrawingsFolder.Text))
+                    { error = "Drawings Folder is required."; return false; }
+                if (!Directory.Exists(TxtDrawingsFolder.Text.Trim()))
+                    { error = "Drawings Folder does not exist."; return false; }
+            }
             if (string.IsNullOrWhiteSpace(TxtOutputFolder.Text))
                 { error = "Output Folder is required."; return false; }
             if (string.IsNullOrWhiteSpace(TxtAppParamsCsv.Text) || !File.Exists(TxtAppParamsCsv.Text.Trim()))
@@ -193,14 +213,12 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                     TxtWorkloadMapCsv.Text = generated;
             }
 
-            var settings = BuildSettings();
-            var processor = new GenerateJsonZipsProcessor(
-                settings.DrawingsFolder!,
-                settings.AppParamsCsvFile!,
-                settings.WorkloadMapCsvFile!,
-                settings.OutputFolder!,
-                settings,
-                Log);
+            var processor = CreateProcessor(BuildSettings());
+            if (processor == null)
+            {
+                BtnValidateMappings.IsEnabled = true;
+                return;
+            }
 
             MappingValidationResult result = await Task.Run(() => processor.ValidateMappings());
 
@@ -263,19 +281,15 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             GrpSkippedDrawings.Visibility = Visibility.Collapsed;
             StkSkippedDrawings.Children.Clear();
 
+            var processor = CreateProcessor(BuildSettings());
+            if (processor == null)
+                return;
+
             BtnRun.IsEnabled = false;
             BtnValidateMappings.IsEnabled = false;
             BtnCancel.IsEnabled = true;
 
             _cts = new CancellationTokenSource();
-            var settings = BuildSettings();
-            var processor = new GenerateJsonZipsProcessor(
-                settings.DrawingsFolder!,
-                settings.AppParamsCsvFile!,
-                settings.WorkloadMapCsvFile!,
-                settings.OutputFolder!,
-                settings,
-                Log);
 
             SetStatus("⚙️  Processing...");
             TxtExecutionTime.Visibility = Visibility.Collapsed;
@@ -293,23 +307,23 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                     SetStatus($"✅ Done — {result.SuccessfulDrawings}/{result.TotalDrawings} drawing(s) packaged in {elapsed:mm\\:ss}");
                     TxtExecutionTime.Text = $"Total time: {elapsed:mm\\:ss}";
                     TxtExecutionTime.Visibility = Visibility.Visible;
-
-                    if (result.SkippedDrawings > 0)
-                    {
-                        GrpSkippedDrawings.Visibility = Visibility.Visible;
-                        foreach (var name in result.SkippedDrawingNames)
-                        {
-                            StkSkippedDrawings.Children.Add(new TextBlock
-                            {
-                                Text = $"• {name}",
-                                Margin = new Thickness(4, 2, 0, 2)
-                            });
-                        }
-                    }
                 }
                 else
                 {
                     SetStatus($"❌ {result.ErrorMessage}", isError: true);
+                }
+
+                if (result.SkippedDrawings > 0)
+                {
+                    GrpSkippedDrawings.Visibility = Visibility.Visible;
+                    foreach (var name in result.SkippedDrawingNames)
+                    {
+                        StkSkippedDrawings.Children.Add(new TextBlock
+                        {
+                            Text = $"• {name}",
+                            Margin = new Thickness(4, 2, 0, 2)
+                        });
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -339,7 +353,83 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             SetStatus("⏹ Cancelling...");
         }
 
+        /// <summary>
+        /// Builds the processor for the selected drawing source. In links mode the links
+        /// file is read here; returns null (with the error shown) if it can't be used.
+        /// </summary>
+        private GenerateJsonZipsProcessor? CreateProcessor(GenerateJsonZipsSettings settings)
+        {
+            System.Collections.Generic.List<DrawingLink>? links = null;
+            if (settings.UseLinks)
+            {
+                try
+                {
+                    links = DrawingLinkDownloader.ReadLinks(settings.LinksFile!);
+                    Log($"🔗 Found {links.Count} download link(s) in {Path.GetFileName(settings.LinksFile)}");
+                }
+                catch (Exception ex)
+                {
+                    SetStatus($"❌ {ex.Message}", isError: true);
+                    Log($"❌ {ex.Message}");
+                    return null;
+                }
+            }
+
+            return new GenerateJsonZipsProcessor(
+                settings.DrawingsFolder!,
+                settings.AppParamsCsvFile!,
+                settings.WorkloadMapCsvFile!,
+                settings.OutputFolder!,
+                settings,
+                Log,
+                links,
+                settings.DownloadFolder);
+        }
+
+        // ── Drawing source ────────────────────────────────────────────────────
+
+        private void SourceMode_Changed(object sender, RoutedEventArgs e)
+        {
+            UpdateSourceFieldStates();
+            if (BtnRun != null && TxtStatus != null) InvalidateMappings();
+        }
+
+        private void UpdateSourceFieldStates()
+        {
+            // Checked events fire during InitializeComponent, before all controls exist
+            if (LblLinksFile == null || TxtLinksFile == null || BtnBrowseLinksFile == null ||
+                LblDownloadFolder == null || TxtDownloadFolder == null || BtnBrowseDownloadFolder == null ||
+                LblDrawingsFolder == null || TxtDrawingsFolder == null || BtnBrowseDrawingsFolder == null)
+                return;
+
+            var linksVisibility = UseLinks ? Visibility.Visible : Visibility.Collapsed;
+            var folderVisibility = UseLinks ? Visibility.Collapsed : Visibility.Visible;
+
+            LblLinksFile.Visibility = linksVisibility;
+            TxtLinksFile.Visibility = linksVisibility;
+            BtnBrowseLinksFile.Visibility = linksVisibility;
+            LblDownloadFolder.Visibility = linksVisibility;
+            TxtDownloadFolder.Visibility = linksVisibility;
+            BtnBrowseDownloadFolder.Visibility = linksVisibility;
+
+            LblDrawingsFolder.Visibility = folderVisibility;
+            TxtDrawingsFolder.Visibility = folderVisibility;
+            BtnBrowseDrawingsFolder.Visibility = folderVisibility;
+        }
+
         // ── Browse buttons ────────────────────────────────────────────────────
+
+        private void BtnBrowseLinksFile_Click(object sender, RoutedEventArgs e)
+        {
+            var file = BrowseFile("Text Files|*.txt|All Files|*.*", "Select links file (text file with URLs, one per line)");
+            if (file != null) { TxtLinksFile.Text = file; InvalidateMappings(); }
+        }
+
+        private void BtnBrowseDownloadFolder_Click(object sender, RoutedEventArgs e)
+        {
+            var folder = BrowseFolder("Select download folder (where DWG files will be downloaded)");
+            if (folder != null) TxtDownloadFolder.Text = folder;
+        }
 
         private void BtnBrowseDrawingsFolder_Click(object sender, RoutedEventArgs e)
         {

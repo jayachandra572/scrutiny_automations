@@ -54,9 +54,12 @@
             </Border>
 
             <!-- Input/Output Paths -->
-            <GroupBox Grid.Row="1" Header="📁 Folders" Margin="0,0,0,10" Padding="10">
+            <GroupBox Grid.Row="1" Header="📁 Drawing Source and Folders" Margin="0,0,0,10" Padding="10">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
@@ -66,13 +69,35 @@
                         <ColumnDefinition Width="100"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Drawings Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
-                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="TxtDrawingsFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
-                    <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseDrawingsFolder_Click"/>
+                    <!-- Source Selection -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Drawing Source:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                    <StackPanel Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="5">
+                        <RadioButton x:Name="RbSourceFolder" Content="Local drawing folder" GroupName="DrawingSource" IsChecked="True"
+                                     VerticalAlignment="Center" Margin="0,0,20,0" Checked="SourceMode_Changed"
+                                     ToolTip="Process all DWG files already present in a local folder"/>
+                        <RadioButton x:Name="RbSourceLinks" Content="Download from links" GroupName="DrawingSource"
+                                     VerticalAlignment="Center" Checked="SourceMode_Changed"
+                                     ToolTip="Download DWG files from the URLs in the links file, then process them"/>
+                    </StackPanel>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Output Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="TxtOutputFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
-                    <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseOutputFolder_Click"/>
+                    <!-- Links File (links mode only) -->
+                    <TextBlock Grid.Row="1" Grid.Column="0" x:Name="LblLinksFile" Text="Links File:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="Text file with download URLs (one per line)"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="TxtLinksFile" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                    <Button Grid.Row="1" Grid.Column="2" x:Name="BtnBrowseLinksFile" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseLinksFile_Click"/>
+
+                    <!-- Download Folder (links mode only) -->
+                    <TextBlock Grid.Row="2" Grid.Column="0" x:Name="LblDownloadFolder" Text="Download Folder:" VerticalAlignment="Center" Margin="0,5,0,5" ToolTip="Where downloaded DWG files are stored (in a timestamped subfolder)"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtDownloadFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                    <Button Grid.Row="2" Grid.Column="2" x:Name="BtnBrowseDownloadFolder" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseDownloadFolder_Click"/>
+
+                    <!-- Drawings Folder (local folder mode only) -->
+                    <TextBlock Grid.Row="3" Grid.Column="0" x:Name="LblDrawingsFolder" Text="Drawings Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                    <TextBox Grid.Row="3" Grid.Column="1" x:Name="TxtDrawingsFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                    <Button Grid.Row="3" Grid.Column="2" x:Name="BtnBrowseDrawingsFolder" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseDrawingsFolder_Click"/>
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Output Folder:" VerticalAlignment="Center" Margin="0,5,0,5"/>
+                    <TextBox Grid.Row="4" Grid.Column="1" x:Name="TxtOutputFolder" Margin="5" Padding="5" VerticalAlignment="Center"/>
+                    <Button Grid.Row="4" Grid.Column="2" Content="Browse..." Margin="5" Padding="5" Click="BtnBrowseOutputFolder_Click"/>
                 </Grid>
             </GroupBox>
 
@@ -219,7 +244,7 @@
             </GroupBox>
 
             <!-- Skipped Drawings -->
-            <GroupBox x:Name="GrpSkippedDrawings" Grid.Row="6" Header="⚠️ Skipped Drawings (no WorkloadID)" Margin="0,0,0,10" Padding="10" Visibility="Collapsed">
+            <GroupBox x:Name="GrpSkippedDrawings" Grid.Row="6" Header="⚠️ Skipped Drawings" Margin="0,0,0,10" Padding="10" Visibility="Collapsed">
                 <ScrollViewer MaxHeight="100" VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="StkSkippedDrawings"/>
                 </ScrollViewer>
@@ -240,7 +265,7 @@
 
             <!-- Footer -->
             <Border Grid.Row="8" Background="#ECF0F1" Padding="12" CornerRadius="5">
-                <TextBlock Text="💡 Tip: First click 'Validate Mappings' to confirm all drawings are mapped, then click 'Generate JSON Zips' to run."
+                <TextBlock Text="💡 Tip: First click 'Validate Mappings' to confirm all drawings are mapped, then click 'Generate JSON Zips' to run. In links mode, drawings are validated by the file names in the links and downloaded when the run starts."
                           TextWrapping="Wrap" Foreground="#7F8C8D" FontSize="10" HorizontalAlignment="Center"/>
             </Border>
         </Grid>

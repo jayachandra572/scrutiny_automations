@@ -16,23 +16,34 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
         private const string PreScrutinyCommand = "RunPreScrutinyOnlyValidationsBatch";
         private const string ScrutinyReportsCommand = "GenerateScrutinyReportBatch";
 
-        private readonly string _drawingsFolder;
+        // Links mode: becomes the timestamped download folder once the drawings are downloaded
+        private string _drawingsFolder;
         private readonly string _appParamsCsvPath;
         private readonly string _workloadMapCsvPath;
         private readonly string _outputFolder;
         private readonly GenerateJsonZipsSettings _settings;
         private readonly Action<string> _log;
 
+        // Links mode only (null when processing a local drawings folder)
+        private readonly IReadOnlyList<DrawingLink>? _links;
+        private readonly string? _downloadFolder;
+        private bool _linksDownloaded;
+
         private CsvParameterMapper? _appParamsMapper;
         private WorkloadMapCsvReader? _workloadReader;
 
+        /// <param name="drawingsFolder">Local folder with the DWG files. Ignored when <paramref name="links"/> is given.</param>
+        /// <param name="links">Drawing download links. When given, the drawings are downloaded
+        /// into a timestamped subfolder of <paramref name="downloadFolder"/> before processing.</param>
         public GenerateJsonZipsProcessor(
             string drawingsFolder,
             string appParamsCsvPath,
             string workloadMapCsvPath,
             string outputFolder,
             GenerateJsonZipsSettings settings,
-            Action<string> log)
+            Action<string> log,
+            IReadOnlyList<DrawingLink>? links = null,
+            string? downloadFolder = null)
         {
             _drawingsFolder = drawingsFolder;
             _appParamsCsvPath = appParamsCsvPath;
@@ -40,7 +51,11 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             _outputFolder = outputFolder;
             _settings = settings;
             _log = log;
+            _links = links;
+            _downloadFolder = downloadFolder;
         }
+
+        private bool UseLinks => _links != null;
 
         /// <summary>
         /// Pre-flight check: load CSVs and report which drawings are missing mappings.
@@ -74,7 +89,9 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             var drawings = DiscoverDrawings();
             if (drawings.Count == 0)
             {
-                result.ErrorMessage = $"No .dwg files found in: {_drawingsFolder}";
+                result.ErrorMessage = UseLinks && !_linksDownloaded
+                    ? "No download links found in the links file."
+                    : $"No .dwg files found in: {_drawingsFolder}";
                 return result;
             }
 
@@ -121,13 +138,47 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
                 _workloadReader.LoadCsv();
             }
 
+            var batchTime = DateTime.Now;
+
+            // Phase 1b — links mode: download the drawings, then process that folder
+            var failedDownloads = new List<string>();
+            TimeSpan? downloadElapsed = null;
+            if (UseLinks)
+            {
+                string batchDownloadFolder = Path.Combine(_downloadFolder!, batchTime.ToString("yyyyMMdd_HHmmss") + "_drawing_files");
+                _log($"📥 Downloading {_links!.Count} drawing(s) ({_settings.MaxParallelProcesses} concurrent) to: {batchDownloadFolder}");
+                var swDl = System.Diagnostics.Stopwatch.StartNew();
+
+                var failed = await DrawingLinkDownloader.DownloadAllAsync(
+                    _links, batchDownloadFolder, _settings.MaxParallelProcesses, _log, cancellationToken);
+
+                swDl.Stop();
+                downloadElapsed = swDl.Elapsed;
+                failedDownloads = failed.Select(f => $"{f.Link.FileName} (download failed: {f.Error})").ToList();
+                _log($"   → Downloaded: {_links.Count - failed.Count}/{_links.Count}, Failed: {failed.Count}");
+                _log($"   ⏱️  Download time: {FormatElapsed(swDl.Elapsed)}");
+
+                _drawingsFolder = batchDownloadFolder;
+                _linksDownloaded = true;
+
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             // Phase 2 — discover drawings
             var drawings = DiscoverDrawings();
-            result.TotalDrawings = drawings.Count;
+            result.TotalDrawings = drawings.Count + failedDownloads.Count;
+            if (drawings.Count == 0)
+            {
+                result.ErrorMessage = UseLinks
+                    ? "None of the drawings could be downloaded."
+                    : $"No .dwg files found in: {_drawingsFolder}";
+                result.SkippedDrawings = failedDownloads.Count;
+                result.SkippedDrawingNames = failedDownloads;
+                return result;
+            }
             _log($"📂 Found {drawings.Count} drawing(s) to process.");
 
             // Phase 3 — create temp working folder for this batch
-            var batchTime = DateTime.Now;
             string batchFolder = Path.Combine(_outputFolder, "_tmp_batch_" + batchTime.ToString("yyyyMMdd_HHmmss"));
             Directory.CreateDirectory(batchFolder);
 
@@ -202,6 +253,7 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
             DeleteTempFolder(batchFolder);
 
             totalTimer.Stop();
+            skipped.AddRange(failedDownloads);
             result.SuccessfulDrawings = succeeded;
             result.SkippedDrawings = skipped.Count;
             result.SkippedDrawingNames = skipped;
@@ -211,6 +263,10 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
 
             _log($"");
             _log($"✅ Done. {succeeded} drawing(s) packaged.");
+            if (failedDownloads.Count > 0)
+                _log($"⚠️  {failedDownloads.Count} drawing(s) could not be downloaded and were skipped.");
+            if (downloadElapsed.HasValue)
+                _log($"⏱️  Download                     : {FormatElapsed(downloadElapsed.Value)}");
             _log($"⏱️  Pass 1 (Drawing Validations) : {FormatElapsed(sw1.Elapsed)}");
             _log($"⏱️  Pass 2 (Pre-Scrutiny)        : {FormatElapsed(sw2.Elapsed)}");
             _log($"⏱️  Pass 3 (Scrutiny Reports)    : {FormatElapsed(sw3.Elapsed)}");
@@ -225,6 +281,11 @@ namespace BatchProcessor.Scripts.GenerateJsonZips
 
         private List<string> DiscoverDrawings()
         {
+            // Links mode before downloading: the CSV mappings match on file name only, so
+            // validate against the names the links will be downloaded as.
+            if (UseLinks && !_linksDownloaded)
+                return _links!.Select(l => l.FileName).OrderBy(f => f).ToList();
+
             if (!Directory.Exists(_drawingsFolder))
                 return new List<string>();
 

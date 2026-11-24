@@ -1,12 +1,13 @@
 {
-  "UseDrawingFolder": false,
+  "UseDrawingFolder": true,
+  "DownloadOnly": false,
   "LinksFile": "C:\\Users\\Jaya\\Documents\\podium_drawing_links.txt",
-  "DrawingFilesFolder": "C:\\Users\\Jaya\\Downloads\\PodiumFiles",
+  "DrawingFilesFolder": "C:\\Users\\Jaya\\Downloads\\Testing",
   "DownloadFolder": "C:\\Users\\Jaya\\Downloads\\PodiumFiles\\ProdPodiumFiles",
-  "OutputFolder": "D:\\UrbanFloww\\Automations\\PodiumToPlotAnalysis",
-  "DllPath": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",
+  "OutputFolder": "C:\\Users\\Jaya\\Downloads",
+  "DllPath": "E:\\Projects\\UrbanFloww\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",
   "AutoCADPath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\accoreconsole.exe",
-  "CommandName": "GeneratePodiumToPlotSetbackDifferences",
+  "CommandName": "GenerateVentilationStatusDifferences",
   "MaxParallel": 4,
   "VerboseLogging": true
 }

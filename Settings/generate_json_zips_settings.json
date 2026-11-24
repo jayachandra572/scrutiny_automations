@@ -1,11 +1,14 @@
 {
-  "DrawingsFolder": "C:\\Users\\Jaya\\Downloads\\internal_test_files",
-  "AppParamsCsvFile": "C:\\Users\\Jaya\\Downloads\\internal_files.csv",
-  "WorkloadMapCsvFile": "C:\\Users\\Jaya\\Downloads\\Drawing files to Workload map - Testng Reports.csv",
-  "OutputFolder": "D:\\UrbanFloww\\Automations\\Reports",
+  "UseLinks": false,
+  "LinksFile": "C:\\Users\\Jaya\\Downloads\\visitor_parking_existing_workload_links.txt",
+  "DownloadFolder": "E:\\Setback analysis",
+  "DrawingsFolder": "E:\\Setback analysis\\20261123_185347_drawing_files",
+  "AppParamsCsvFile": "C:\\Users\\Jaya\\Downloads\\Visitor Parking existing Files CSV.csv",
+  "WorkloadMapCsvFile": "WorkloadMaps\\Visitor Parking existing Files CSV.csv",
+  "OutputFolder": "E:\\Setback analysis\\JSONs",
   "AutoCADPath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\accoreconsole.exe",
-  "CommonUtilsDll": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\UIPlugin\\bin\\Debug\\net8.0-windows\\CommonUtils.dll",
-  "CrxDll": "D:\\UrbanFloww\\Repos\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",
+  "CommonUtilsDll": "E:\\Projects\\UrbanFloww\\scrutiny-plugins\\CommonUtils\\bin\\Debug\\net8.0\\CommonUtils.dll",
+  "CrxDll": "E:\\Projects\\UrbanFloww\\scrutiny-plugins\\bin\\Debug\\net8.0\\CrxApp.dll",
   "MaxParallelProcesses": 4,
   "VerboseLogging": false
 }
