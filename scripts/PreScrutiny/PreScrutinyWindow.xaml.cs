@@ -133,12 +133,12 @@ namespace BatchProcessor.Scripts.PreScrutiny
                     timerBlock.Text = $"⏱️ {timeString}";
 
                     // Update color based on elapsed time
-                    if (elapsed.TotalMinutes >= 6)
+                    if (elapsed.TotalMinutes >= DrawingBatchProcessor.ProcessTimeoutMinutes)
                     {
                         timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red);
                         timerBlock.Text = $"⏱️ {timeString} ⚠️ TIMEOUT";
                     }
-                    else if (elapsed.TotalMinutes >= 5)
+                    else if (elapsed.TotalMinutes >= DrawingBatchProcessor.ProcessTimeoutMinutes - 5)
                     {
                         timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Orange);
                     }
@@ -183,12 +183,12 @@ namespace BatchProcessor.Scripts.PreScrutiny
                     Grid.SetColumn(timerBlock, 1);
 
                     // Set initial color
-                    if (elapsed.TotalMinutes >= 6)
+                    if (elapsed.TotalMinutes >= DrawingBatchProcessor.ProcessTimeoutMinutes)
                     {
                         timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red);
                         timerBlock.Text = $"⏱️ {timeString} ⚠️ TIMEOUT";
                     }
-                    else if (elapsed.TotalMinutes >= 5)
+                    else if (elapsed.TotalMinutes >= DrawingBatchProcessor.ProcessTimeoutMinutes - 5)
                     {
                         timerBlock.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Orange);
                     }

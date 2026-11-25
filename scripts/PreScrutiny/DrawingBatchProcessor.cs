@@ -16,6 +16,9 @@ namespace BatchProcessor.PreScrutiny
     /// </summary>
     public class DrawingBatchProcessor
     {
+        /// <summary>Max time (minutes) an AutoCAD process may run for one drawing before it is killed.</summary>
+        public const int ProcessTimeoutMinutes = 30;
+
         private readonly string _accoreconsoleExePath;
         private readonly List<string> _dllsToLoad;
         private readonly string _mainCommand;
@@ -557,10 +560,10 @@ namespace BatchProcessor.PreScrutiny
                 // Disable AutoCAD logs - suppress process start message
                 // (user requested to disable AutoCAD logs)
 
-                // Add timeout to prevent hanging (6 minutes max per drawing)
+                // Add timeout to prevent hanging (ProcessTimeoutMinutes max per drawing)
                 // IMPORTANT: Without proper timeout and cleanup, processes can hang indefinitely,
                 // blocking parallel processing slots and preventing next files from being processed
-                using (var cts = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
+                using (var cts = new CancellationTokenSource(TimeSpan.FromMinutes(ProcessTimeoutMinutes)))
                 {
                     try
                     {
@@ -573,7 +576,7 @@ namespace BatchProcessor.PreScrutiny
                         {
                             if (!process.HasExited)
                             {
-                                Console.WriteLine($"  ⚠️  WARNING: Process timed out after 6 minutes - killing process tree...");
+                                Console.WriteLine($"  ⚠️  WARNING: Process timed out after {ProcessTimeoutMinutes} minutes - killing process tree...");
                                 try
                                 {
                                     process.Kill(entireProcessTree: true); // Kill entire process tree including child processes
@@ -588,10 +591,10 @@ namespace BatchProcessor.PreScrutiny
                                 {
                                     Console.WriteLine($"  ⚠️  WARNING: Process did not exit after kill - forcing termination");
                                 }
-                                Console.WriteLine($"  ⏱️  REASON: AutoCAD process exceeded 6-minute timeout limit");
+                                Console.WriteLine($"  ⏱️  REASON: AutoCAD process exceeded {ProcessTimeoutMinutes}-minute timeout limit");
                                 Console.WriteLine($"  ⏱️  REASON: Process may be hung or taking too long to initialize");
                                 Console.WriteLine($"  ❌ RESULT: File marked as NON-PROCESSED (process killed before completion)");
-                                result.ErrorMessage = "Process timed out after 6 minutes";
+                                result.ErrorMessage = $"Process timed out after {ProcessTimeoutMinutes} minutes";
                                 result.WasProcessed = false; // Mark as not processed due to timeout
                             }
                         }
@@ -1169,7 +1172,7 @@ namespace BatchProcessor.PreScrutiny
 
                     var completed = await Task.WhenAny(
                         processingTask,
-                        Task.Delay(TimeSpan.FromMinutes(6), ct)
+                        Task.Delay(TimeSpan.FromMinutes(ProcessTimeoutMinutes), ct)
                     );
 
                     if (completed != processingTask)
